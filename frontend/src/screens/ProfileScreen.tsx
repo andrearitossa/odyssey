@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Modal, TextInput, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Alert, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { BottomTabParamList, User, UserWorld } from '../types';
 import { ProfileAPI, SUPPORTED_LANGUAGES, SupportedLanguage } from '../api/profile';
+import { AppHeader, ErrorView, LoadingView, ModalHeader, Screen, TextField, theme } from '../ui';
 
 type Props = BottomTabScreenProps<BottomTabParamList, 'Profile'>;
 
@@ -98,33 +99,26 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
   // Loading state
   if (loading) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color="#8B5CF6" />
-        <Text style={styles.loadingText}>Loading profile...</Text>
-      </View>
+      <Screen>
+        <LoadingView label="Loading profile..." />
+      </Screen>
     );
   }
 
   // Error state
   if (error || !memoizedProfile) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <Text style={styles.errorText}>{error || 'Failed to load profile'}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={loadProfile}>
-          <Text style={styles.retryButtonText}>Try Again</Text>
-        </TouchableOpacity>
-      </View>
+      <Screen>
+        <ErrorView message={error || 'Failed to load profile'} onRetry={loadProfile} retryLabel="Try Again" />
+      </Screen>
     );
   }
 
   const { user, userWorlds } = memoizedProfile;
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Profile</Text>
-      </View>
+    <Screen>
+      <AppHeader title="Profile" />
 
       <ScrollView 
         style={styles.content} 
@@ -143,7 +137,7 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
                 />
               ) : (
                 <View style={styles.defaultProfileImage}>
-                  <Ionicons name="person" size={32} color="#8B5CF6" />
+                  <Ionicons name="person" size={32} color={theme.colors.wine} />
                 </View>
               )}
             </View>
@@ -156,7 +150,7 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
                   style={styles.editButton} 
                   onPress={openEditNameModal}
                 >
-                  <Ionicons name="pencil" size={16} color="#8B5CF6" />
+                  <Ionicons name="pencil" size={16} color={theme.colors.goldDark} />
                 </TouchableOpacity>
               </View>
               <Text style={styles.userEmail}>{user.email}</Text>
@@ -171,7 +165,7 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
               onPress={openLanguageModal}
             >
               <Text style={styles.languageText}>{user.language}</Text>
-              <Ionicons name="chevron-down" size={16} color="#64748B" />
+              <Ionicons name="chevron-down" size={16} color={theme.colors.textMuted} />
             </TouchableOpacity>
           </View>
         </View>
@@ -206,7 +200,7 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
                     Last played: {new Date(world.updated_at).toLocaleDateString()}
                   </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color="#8B5CF6" />
+                <Ionicons name="chevron-forward" size={20} color={theme.colors.wine} />
               </TouchableOpacity>
             ))
           )}
@@ -219,49 +213,26 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
         animationType="slide"
         presentationStyle="pageSheet"
       >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity 
-              onPress={() => setIsEditNameModalVisible(false)}
-              disabled={isUpdating}
-            >
-              <Text style={styles.modalCancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Edit Name</Text>
-            <TouchableOpacity 
-              style={[
-                styles.modalSaveButton,
-                (!newName.trim() || isUpdating) && styles.modalSaveButtonDisabled
-              ]}
-              onPress={handleUpdateName}
-              disabled={!newName.trim() || isUpdating}
-            >
-              {isUpdating ? (
-                <ActivityIndicator size="small" color="white" />
-              ) : (
-                <Text style={[
-                  styles.modalSaveText,
-                  (!newName.trim() || isUpdating) && styles.modalSaveTextDisabled
-                ]}>
-                  Save
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
+        <Screen>
+          <ModalHeader
+            title="Edit Name"
+            onCancel={() => setIsEditNameModalVisible(false)}
+            onConfirm={handleUpdateName}
+            confirmLabel="Save"
+            confirmDisabled={!newName.trim() || isUpdating}
+            confirmLoading={isUpdating}
+          />
           <View style={styles.modalContent}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Name</Text>
-              <TextInput
-                style={styles.textInput}
-                value={newName}
-                onChangeText={setNewName}
-                placeholder="Enter your name"
-                maxLength={50}
-                editable={!isUpdating}
-              />
-            </View>
+            <TextField
+              label="Name"
+              value={newName}
+              onChangeText={setNewName}
+              placeholder="Enter your name"
+              maxLength={50}
+              editable={!isUpdating}
+            />
           </View>
-        </View>
+        </Screen>
       </Modal>
 
       {/* Language Selection Modal */}
@@ -270,17 +241,11 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
         animationType="slide"
         presentationStyle="pageSheet"
       >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity 
-              onPress={() => setIsLanguageModalVisible(false)}
-              disabled={isUpdating}
-            >
-              <Text style={styles.modalCancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Select Language</Text>
-            <View style={styles.headerSpacer} />
-          </View>
+        <Screen>
+          <ModalHeader
+            title="Select Language"
+            onCancel={() => setIsLanguageModalVisible(false)}
+          />
           <ScrollView style={styles.modalContent}>
             {SUPPORTED_LANGUAGES.map((language) => (
               <TouchableOpacity
@@ -299,41 +264,25 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
                   {language}
                 </Text>
                 {selectedLanguage === language && (
-                  <Ionicons name="checkmark" size={20} color="#8B5CF6" />
+                  <Ionicons name="checkmark" size={20} color={theme.colors.gold} />
                 )}
               </TouchableOpacity>
             ))}
           </ScrollView>
-        </View>
+        </Screen>
       </Modal>
-    </View>
+    </Screen>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: theme.colors.background,
   },
   centered: {
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  header: {
-    padding: 16,
-    paddingTop: 20,
-    backgroundColor: 'white',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    textAlign: 'center',
   },
   content: {
     flex: 1,
@@ -342,15 +291,13 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   profileCard: {
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     borderRadius: 16,
     padding: 20,
     marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadow,
   },
   profileHeader: {
     flexDirection: 'row',
@@ -364,13 +311,13 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: theme.colors.surfaceAlt,
   },
   defaultProfileImage: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: theme.colors.surfaceAlt,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -385,7 +332,7 @@ const styles = StyleSheet.create({
   userName: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#1E293B',
+    color: theme.colors.text,
     marginRight: 8,
   },
   editButton: {
@@ -393,7 +340,7 @@ const styles = StyleSheet.create({
   },
   userEmail: {
     fontSize: 14,
-    color: '#64748B',
+    color: theme.colors.textMuted,
   },
   settingItem: {
     flexDirection: 'row',
@@ -401,26 +348,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
+    borderTopColor: theme.colors.border,
   },
   settingLabel: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#1E293B',
+    color: theme.colors.text,
   },
   languageSelector: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: theme.colors.surfaceAlt,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.border,
   },
   languageText: {
     fontSize: 16,
-    color: '#1E293B',
+    color: theme.colors.text,
     marginRight: 8,
   },
   worldsSection: {
@@ -429,45 +376,41 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#1E293B',
+    color: theme.colors.text,
     marginBottom: 16,
   },
   emptyWorlds: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     borderRadius: 16,
     padding: 40,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadow,
   },
   emptyWorldsText: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#64748B',
+    color: theme.colors.textMuted,
     marginTop: 12,
   },
   emptyWorldsSubtext: {
     fontSize: 14,
-    color: '#94A3B8',
+    color: theme.colors.textMuted,
     marginTop: 4,
     textAlign: 'center',
   },
   worldCard: {
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadow,
   },
   worldInfo: {
     flex: 1,
@@ -475,18 +418,18 @@ const styles = StyleSheet.create({
   worldTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#1E293B',
+    color: theme.colors.text,
     marginBottom: 4,
   },
   worldDescription: {
     fontSize: 14,
-    color: '#64748B',
+    color: theme.colors.textMuted,
     lineHeight: 18,
     marginBottom: 4,
   },
   worldDate: {
     fontSize: 12,
-    color: '#94A3B8',
+    color: theme.colors.textMuted,
   },
   loadingText: {
     marginTop: 16,
@@ -501,7 +444,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   retryButton: {
-    backgroundColor: '#8B5CF6',
+    backgroundColor: theme.colors.wine,
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 8,
@@ -512,7 +455,7 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.background,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -537,7 +480,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   modalSaveButton: {
-    backgroundColor: '#8B5CF6',
+    backgroundColor: theme.colors.wine,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
@@ -572,10 +515,10 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   textInput: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: theme.colors.surface,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.border,
     borderRadius: 8,
     fontSize: 16,
   },
@@ -586,17 +529,17 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: theme.colors.border,
   },
   languageOptionSelected: {
-    backgroundColor: '#F0F9FF',
+    backgroundColor: theme.colors.surfaceAlt,
   },
   languageOptionText: {
     fontSize: 16,
-    color: '#1E293B',
+    color: theme.colors.text,
   },
   languageOptionTextSelected: {
-    color: '#8B5CF6',
+    color: theme.colors.wine,
     fontWeight: '500',
   },
 }); 

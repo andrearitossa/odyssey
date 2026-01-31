@@ -13,6 +13,7 @@ import {
 import { RootStackParamList } from '../types';
 import { WorldGenerationAPI } from '../api/worldGeneration';
 import { getWorldById, updateWorld, GoogleTokenManager } from '../api';
+import { Screen, theme } from '../ui';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorldGeneration'>;
 
@@ -312,15 +313,15 @@ export const WorldGenerationScreen: React.FC<Props> = ({ navigation, route }) =>
 
   const getBottomButtonColor = () => {
     if (recorderState.isRecording) {
-      return '#EF4444'; // Red when recording
+      return theme.colors.danger; // Red when recording
     }
-    return '#8B5CF6'; // Purple default
+    return theme.colors.wine; // Wine default
   };
 
   // Status text removed — UI shows only buttons and rendered document
 
   return (
-    <View style={styles.container}>
+    <Screen style={styles.container}>
       {/* Back button top-left */}
       <View style={styles.backContainer}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
@@ -333,7 +334,7 @@ export const WorldGenerationScreen: React.FC<Props> = ({ navigation, route }) =>
         <View style={styles.responseContainer}>
           {audioState.isLoading && (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#8B5CF6" />
+              <ActivityIndicator size="large" color={theme.colors.wine} />
             </View>
           )}
           
@@ -351,7 +352,7 @@ export const WorldGenerationScreen: React.FC<Props> = ({ navigation, route }) =>
 
         <View style={styles.documentContainer}>
           {isWorldLoading ? (
-            <ActivityIndicator size="small" color="#8B5CF6" />
+            <ActivityIndicator size="small" color={theme.colors.wine} />
           ) : (
             <>
               <TextInput
@@ -397,14 +398,14 @@ export const WorldGenerationScreen: React.FC<Props> = ({ navigation, route }) =>
           </Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </Screen>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: theme.colors.background,
   },
   backContainer: {
     position: 'absolute',
@@ -416,18 +417,16 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.goldSoft,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...theme.shadow,
   },
   backButtonText: {
     fontSize: 22,
-    color: '#0F172A',
+    color: theme.colors.wine,
   },
   content: {
     flex: 1,
@@ -477,31 +476,29 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   documentContainer: {
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     borderRadius: 12,
     padding: 20,
     maxWidth: 700,
     width: '100%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadow,
   },
   titleInput: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#0F172A',
+    color: theme.colors.text,
     paddingVertical: 8,
   },
   divider: {
-    color: '#94A3B8',
+    color: theme.colors.goldDark,
     marginVertical: 6,
     fontSize: 16,
   },
   descriptionInput: {
     fontSize: 16,
-    color: '#0F172A',
+    color: theme.colors.text,
     lineHeight: 22,
     minHeight: 160,
     textAlignVertical: 'top',
@@ -510,7 +507,7 @@ const styles = StyleSheet.create({
   saveButton: {
     marginTop: 12,
     alignSelf: 'flex-end',
-    backgroundColor: '#0F172A',
+    backgroundColor: theme.colors.wine,
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 14,
@@ -519,38 +516,34 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   saveButtonText: {
-    color: 'white',
+    color: theme.colors.textOnWine,
     fontSize: 14,
     fontWeight: '600',
   },
   loadingContainer: {
     alignItems: 'center',
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     borderRadius: 12,
     padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadow,
   },
   loadingText: {
     marginTop: 8,
     fontSize: 12,
-    color: '#64748B',
+    color: theme.colors.textMuted,
   },
   responseButton: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#8B5CF6',
+    backgroundColor: theme.colors.wine,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: theme.colors.goldSoft,
+    ...theme.shadow,
   },
   responseButtonText: {
     fontSize: 24,
@@ -577,7 +570,7 @@ const styles = StyleSheet.create({
   },
   bottomButtonText: {
     fontSize: 32,
-    color: 'white',
+    color: theme.colors.textOnWine,
     fontWeight: 'bold',
   },
 }); 

@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Modal, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, Alert } from 'react-native';
 import { CompositeScreenProps } from '@react-navigation/native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { BottomTabParamList, RootStackParamList, World } from '../types';
 import { GoogleTokenManager, createWorld, getMyWorlds, listSessions, SessionSummary } from '../api';
+import { AppHeader, Button, ErrorView, LoadingView, ModalHeader, Screen, TextField, theme } from '../ui';
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<BottomTabParamList, 'Home'>,
@@ -131,29 +132,23 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color="#8B5CF6" />
-        <Text style={styles.statusText}>Loading your worlds...</Text>
-      </View>
+      <Screen>
+        <LoadingView label="Loading your worlds..." />
+      </Screen>
     );
   }
 
   if (error) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.actionButton} onPress={checkAuthAndLoadData}>
-          <Text style={styles.actionButtonText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
+      <Screen>
+        <ErrorView message={error} onRetry={checkAuthAndLoadData} />
+      </Screen>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.appHeader}>
-        <Text style={styles.appHeaderText}>-- Odissea --</Text>
-      </View>
+    <Screen>
+      <AppHeader title="Odyssey" />
       <ScrollView style={styles.mainScroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.mainScrollContent}>
         {/* Worlds section */}
         <View style={styles.sectionHeader}>
@@ -169,13 +164,12 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
         >
           <TouchableOpacity
             key="new-world"
-            style={styles.horizontalCard}
+            style={[styles.horizontalCard, styles.smallCreateCard]}
             onPress={openCreateModal}
             activeOpacity={0.7}
           >
-            <View style={styles.newCardContent}>
-              <Text style={styles.newCardText}>New World</Text>
-            </View>
+            <Text style={styles.smallCreateCardTitle}>New World</Text>
+            <Text style={styles.smallCreateCardSubtitle}>Create a fresh setting</Text>
           </TouchableOpacity>
           {worlds.map((world) => (
             <TouchableOpacity
@@ -213,13 +207,12 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
         >
           <TouchableOpacity
             key="new-session"
-            style={styles.horizontalCard}
+            style={[styles.horizontalCard, styles.smallCreateCard]}
             onPress={handleNewSession}
             activeOpacity={0.7}
           >
-            <View style={styles.newCardContent}>
-              <Text style={styles.newCardText}>New Session</Text>
-            </View>
+            <Text style={styles.smallCreateCardTitle}>New Session</Text>
+            <Text style={styles.smallCreateCardSubtitle}>Pick a world to start</Text>
           </TouchableOpacity>
           {sessions.map((session) => (
             <TouchableOpacity
@@ -249,78 +242,55 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
         presentationStyle="pageSheet"
         onRequestClose={closeCreateModal}
       >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={closeCreateModal}>
-              <Text style={styles.modalCancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Create New World</Text>
-            <TouchableOpacity
-              onPress={handleCreateWorld}
-              disabled={isCreating || !newWorldTitle.trim()}
-              style={[styles.modalSaveButton, (!newWorldTitle.trim() || isCreating) && styles.modalSaveButtonDisabled]}
-            >
-              <Text style={[styles.modalSaveText, (!newWorldTitle.trim() || isCreating) && styles.modalSaveTextDisabled]}>
-                {isCreating ? 'Creating...' : 'Create'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
+        <Screen>
+          <ModalHeader
+            title="Create New World"
+            onCancel={closeCreateModal}
+            onConfirm={handleCreateWorld}
+            confirmLabel={isCreating ? 'Creating…' : 'Create'}
+            confirmDisabled={!newWorldTitle.trim() || isCreating}
+            confirmLoading={isCreating}
+          />
           <ScrollView style={styles.modalContent}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Title *</Text>
-              <TextInput
-                style={styles.textInput}
-                value={newWorldTitle}
-                onChangeText={setNewWorldTitle}
-                placeholder="Enter world title"
-                placeholderTextColor="#94A3B8"
-                maxLength={100}
-                editable={!isCreating}
-              />
-            </View>
+            <TextField
+              label="Title"
+              required
+              value={newWorldTitle}
+              onChangeText={setNewWorldTitle}
+              placeholder="Enter world title"
+              maxLength={100}
+              editable={!isCreating}
+            />
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Description</Text>
-              <TextInput
-                style={[styles.textInput, styles.textArea]}
-                value={newWorldDescription}
-                onChangeText={setNewWorldDescription}
-                placeholder="Describe your world..."
-                placeholderTextColor="#94A3B8"
-                multiline
-                numberOfLines={4}
-                maxLength={2000}
-                editable={!isCreating}
-              />
+            <TextField
+              label="Description"
+              value={newWorldDescription}
+              onChangeText={setNewWorldDescription}
+              placeholder="Describe your world…"
+              multiline
+              numberOfLines={4}
+              maxLength={2000}
+              editable={!isCreating}
+              style={styles.textArea}
+            />
+            <View style={styles.modalFooter}>
+              <Button label="Close" onPress={closeCreateModal} variant="secondary" />
             </View>
           </ScrollView>
-        </View>
+        </Screen>
       </Modal>
-    </View>
+    </Screen>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: theme.colors.background,
   },
   centered: {
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  appHeader: {
-    padding: 16,
-    alignItems: 'center',
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  appHeaderText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1E293B',
   },
   mainScroll: {
     flex: 1,
@@ -336,49 +306,68 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#0F172A',
+    color: theme.colors.text,
   },
   sectionSubtitle: {
     marginTop: 4,
     fontSize: 13,
-    color: '#64748B',
+    color: theme.colors.textMuted,
   },
   horizontalListContent: {
     paddingRight: 16,
     gap: 12,
   },
   horizontalCard: {
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     borderRadius: 16,
     padding: 16,
     width: 280,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadow,
+  },
+  smallCreateCard: {
+    width: 220,
+    padding: 14,
+    borderStyle: 'dashed',
+    borderWidth: 2,
+    borderColor: theme.colors.goldSoft,
+    backgroundColor: theme.colors.surfaceAlt,
+  },
+  smallCreateCardTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: theme.colors.wine,
+    marginBottom: 6,
+  },
+  smallCreateCardSubtitle: {
+    fontSize: 13,
+    color: theme.colors.textMuted,
+    lineHeight: 18,
   },
   worldTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#0F172A',
+    color: theme.colors.text,
     marginBottom: 6,
   },
   worldDescription: {
     fontSize: 14,
-    color: '#334155',
+    color: theme.colors.textMuted,
     lineHeight: 20,
     marginBottom: 12,
   },
   playButton: {
     alignSelf: 'flex-start',
-    backgroundColor: '#F1F5F9',
+    backgroundColor: theme.colors.surfaceAlt,
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.goldSoft,
   },
   playButtonText: {
-    color: '#0F172A',
+    color: theme.colors.wineDark,
     fontWeight: '600',
   },
   newCardContent: {
@@ -389,39 +378,23 @@ const styles = StyleSheet.create({
   newCardText: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#8B5CF6',
+    color: theme.colors.wine,
   },
   sessionLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#8B5CF6',
+    color: theme.colors.wine,
     marginBottom: 6,
     textTransform: 'uppercase',
   },
   sessionMeta: {
     fontSize: 12,
-    color: '#64748B',
+    color: theme.colors.textMuted,
     marginBottom: 12,
   },
   statusText: {
     marginTop: 10,
-    color: '#64748B',
-  },
-  errorText: {
-    color: '#EF4444',
-    paddingHorizontal: 20,
-    textAlign: 'center',
-    marginBottom: 14,
-  },
-  actionButton: {
-    backgroundColor: '#8B5CF6',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
-  actionButtonText: {
-    color: 'white',
-    fontWeight: '600',
+    color: theme.colors.textMuted,
   },
   emptyState: {
     backgroundColor: 'white',
@@ -440,66 +413,14 @@ const styles = StyleSheet.create({
     color: '#64748B',
     textAlign: 'center',
   },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  modalCancelText: {
-    color: '#64748B',
-    fontSize: 16,
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#0F172A',
-  },
-  modalSaveButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    backgroundColor: '#8B5CF6',
-  },
-  modalSaveButtonDisabled: {
-    backgroundColor: '#E2E8F0',
-  },
-  modalSaveText: {
-    color: 'white',
-    fontWeight: '600',
-  },
-  modalSaveTextDisabled: {
-    color: '#94A3B8',
-  },
   modalContent: {
     padding: 16,
-  },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 14,
-    color: '#334155',
-    marginBottom: 8,
-    fontWeight: '600',
-  },
-  textInput: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    color: '#0F172A',
   },
   textArea: {
     minHeight: 120,
     textAlignVertical: 'top',
+  },
+  modalFooter: {
+    marginTop: theme.spacing.sm,
   },
 });
