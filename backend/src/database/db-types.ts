@@ -42,9 +42,11 @@ export interface Migration {
 
 export interface World {
   id: string;
+  creator_id: number | null;
   title: string;
   description: string | null;
   created_at: string;
+  updated_at: string;
 }
 
 export interface Session {

@@ -1,17 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Modal, TextInput, Alert } from 'react-native';
 import { CompositeScreenProps } from '@react-navigation/native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { BottomTabParamList, RootStackParamList, World } from '../types';
-import { GoogleTokenManager, getAllWorlds, createWorld } from '../api';
+import { GoogleTokenManager, createWorld, getMyWorlds } from '../api';
 
 type Props = CompositeScreenProps<
-  BottomTabScreenProps<BottomTabParamList, 'Search'>,
+  BottomTabScreenProps<BottomTabParamList, 'Home'>,
   NativeStackScreenProps<RootStackParamList>
 >;
 
-export const WorldSelectionScreen: React.FC<Props> = ({ navigation }) => {
+export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const [worlds, setWorlds] = useState<World[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -28,55 +28,38 @@ export const WorldSelectionScreen: React.FC<Props> = ({ navigation }) => {
     try {
       setLoading(true);
       setError(null);
-      
-      // Check if user is authenticated first
+
       const authResult = await GoogleTokenManager.checkExistingAuth();
       if (!authResult.isAuthenticated) {
-        // Redirect to authentication
         navigation.getParent()?.navigate('GoogleAuth');
         return;
       }
-      
-      // User is authenticated, load worlds
+
       const token = await GoogleTokenManager.getValidToken();
-      
       if (!token) {
-        // This shouldn't happen if checkExistingAuth passed, but just in case
         navigation.getParent()?.navigate('GoogleAuth');
         return;
       }
-      
-      const worldsData = await getAllWorlds(token);
+
+      const worldsData = await getMyWorlds(token);
       setWorlds(worldsData);
-      
     } catch (error) {
-      console.error('Error loading worlds:', error);
-      
-      // Check if it's a network/blocking error
+      console.error('Error loading your worlds:', error);
       if (error instanceof TypeError && error.message === 'Failed to fetch') {
-        setError('Unable to connect to server. If you\'re in development mode, this might be due to ad blockers or browser security. Please check the console for troubleshooting tips.');
+        setError('Unable to connect to server.');
       } else if (error instanceof Error && error.message.includes('Authentication')) {
-        // Authentication-related errors - redirect to login
         navigation.getParent()?.navigate('GoogleAuth');
         return;
       } else {
-        // Generic error
-        setError('Failed to load worlds. Please try again.');
+        setError('Failed to load your worlds. Please try again.');
       }
     } finally {
       setLoading(false);
     }
   };
 
-  const loadWorlds = async () => {
-    await checkAuthAndLoadWorlds();
-  };
-
   const selectWorld = (world: World) => {
-    navigation.getParent()?.navigate('Session', {
-      worldId: world.id,
-      worldTitle: world.title,
-    });
+    navigation.navigate('WorldGeneration', { worldId: world.id });
   };
 
   const handleCreateWorld = async () => {
@@ -88,20 +71,18 @@ export const WorldSelectionScreen: React.FC<Props> = ({ navigation }) => {
     try {
       setIsCreating(true);
       const token = await GoogleTokenManager.getValidToken();
-      
+
       if (!token) {
         throw new Error('No valid authentication token. Please sign in again.');
       }
-      
+
       await createWorld(token, newWorldTitle.trim(), newWorldDescription.trim() || undefined);
-      
-      // Reset form and close modal
+
       setNewWorldTitle('');
       setNewWorldDescription('');
       setIsCreateModalVisible(false);
-      
-      // Reload worlds to show the new one
-      await loadWorlds();
+
+      await checkAuthAndLoadWorlds();
     } catch (error) {
       console.error('Failed to create world:', error);
       Alert.alert('Error', 'Failed to create world. Please try again.');
@@ -122,36 +103,33 @@ export const WorldSelectionScreen: React.FC<Props> = ({ navigation }) => {
     setIsCreateModalVisible(false);
   };
 
-  // Loading state
   if (loading) {
     return (
       <View style={[styles.container, styles.centered]}>
         <ActivityIndicator size="large" color="#8B5CF6" />
-        <Text style={styles.statusText}>Loading worlds...</Text>
+        <Text style={styles.statusText}>Loading your worlds...</Text>
       </View>
     );
   }
 
-  // Error state
   if (error) {
     return (
       <View style={[styles.container, styles.centered]}>
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.actionButton} onPress={loadWorlds}>
+        <TouchableOpacity style={styles.actionButton} onPress={checkAuthAndLoadWorlds}>
           <Text style={styles.actionButtonText}>Retry</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  // Main content
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={styles.headerText}>
-            <Text style={styles.title}>Choose Your Adventure</Text>
-            <Text style={styles.subtitle}>Select a world to begin your story</Text>
+            <Text style={styles.title}>Your Worlds</Text>
+            <Text style={styles.subtitle}>Tap one to interact and evolve it</Text>
           </View>
           <TouchableOpacity style={styles.addButton} onPress={openCreateModal}>
             <Text style={styles.addButtonText}>+</Text>
@@ -159,32 +137,38 @@ export const WorldSelectionScreen: React.FC<Props> = ({ navigation }) => {
         </View>
       </View>
 
-      <ScrollView 
-        style={styles.worldsContainer} 
+      <ScrollView
+        style={styles.worldsContainer}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {worlds.map((world) => (
-          <TouchableOpacity
-            key={world.id}
-            style={styles.worldCard}
-            onPress={() => selectWorld(world)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.worldTitle}>{world.title}</Text>
-            {world.description && (
-              <Text style={styles.worldDescription} numberOfLines={3}>
-                {world.description}
-              </Text>
-            )}
-            <View style={styles.playButton}>
-              <Text style={styles.playButtonText}>Start Adventure →</Text>
-            </View>
-          </TouchableOpacity>
-        ))}
+        {worlds.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>No worlds yet</Text>
+            <Text style={styles.emptySubtitle}>Create your first world to start.</Text>
+          </View>
+        ) : (
+          worlds.map((world) => (
+            <TouchableOpacity
+              key={world.id}
+              style={styles.worldCard}
+              onPress={() => selectWorld(world)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.worldTitle}>{world.title}</Text>
+              {world.description ? (
+                <Text style={styles.worldDescription} numberOfLines={3}>
+                  {world.description}
+                </Text>
+              ) : null}
+              <View style={styles.playButton}>
+                <Text style={styles.playButtonText}>Interact →</Text>
+              </View>
+            </TouchableOpacity>
+          ))
+        )}
       </ScrollView>
 
-      {/* Create World Modal */}
       <Modal
         visible={isCreateModalVisible}
         animationType="slide"
@@ -197,8 +181,8 @@ export const WorldSelectionScreen: React.FC<Props> = ({ navigation }) => {
               <Text style={styles.modalCancelText}>Cancel</Text>
             </TouchableOpacity>
             <Text style={styles.modalTitle}>Create New World</Text>
-            <TouchableOpacity 
-              onPress={handleCreateWorld} 
+            <TouchableOpacity
+              onPress={handleCreateWorld}
               disabled={isCreating || !newWorldTitle.trim()}
               style={[styles.modalSaveButton, (!newWorldTitle.trim() || isCreating) && styles.modalSaveButtonDisabled]}
             >
@@ -207,7 +191,7 @@ export const WorldSelectionScreen: React.FC<Props> = ({ navigation }) => {
               </Text>
             </TouchableOpacity>
           </View>
-          
+
           <ScrollView style={styles.modalContent}>
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Title *</Text>
@@ -221,7 +205,7 @@ export const WorldSelectionScreen: React.FC<Props> = ({ navigation }) => {
                 editable={!isCreating}
               />
             </View>
-            
+
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Description</Text>
               <TextInput
@@ -232,7 +216,7 @@ export const WorldSelectionScreen: React.FC<Props> = ({ navigation }) => {
                 placeholderTextColor="#94A3B8"
                 multiline
                 numberOfLines={4}
-                maxLength={500}
+                maxLength={2000}
                 editable={!isCreating}
               />
             </View>
@@ -258,134 +242,145 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 2,
   },
   headerContent: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
   headerText: {
     flex: 1,
   },
   title: {
-    fontSize: 22,
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#1E293B',
-    textAlign: 'center',
   },
   subtitle: {
     fontSize: 14,
     color: '#64748B',
-    textAlign: 'center',
     marginTop: 4,
+  },
+  addButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#8B5CF6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addButtonText: {
+    color: 'white',
+    fontSize: 24,
+    fontWeight: 'bold',
   },
   worldsContainer: {
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
+    padding: 16,
+    gap: 12,
   },
   worldCard: {
     backgroundColor: 'white',
     borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    padding: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
-    elevation: 5,
+    elevation: 2,
   },
   worldTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 8,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#0F172A',
+    marginBottom: 6,
   },
   worldDescription: {
     fontSize: 14,
-    color: '#64748B',
+    color: '#334155',
     lineHeight: 20,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   playButton: {
-    backgroundColor: '#8B5CF6',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
     alignSelf: 'flex-start',
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
   },
   playButtonText: {
-    color: 'white',
+    color: '#0F172A',
     fontWeight: '600',
-    fontSize: 14,
   },
   statusText: {
-    marginTop: 16,
-    fontSize: 16,
+    marginTop: 10,
     color: '#64748B',
   },
   errorText: {
-    fontSize: 16,
     color: '#EF4444',
-    textAlign: 'center',
-    marginBottom: 20,
     paddingHorizontal: 20,
+    textAlign: 'center',
+    marginBottom: 14,
   },
   actionButton: {
     backgroundColor: '#8B5CF6',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
   },
   actionButtonText: {
     color: 'white',
     fontWeight: '600',
   },
-  addButton: {
-    backgroundColor: '#8B5CF6',
-    padding: 12,
-    borderRadius: 8,
+  emptyState: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
   },
-  addButtonText: {
-    color: 'white',
+  emptyTitle: {
+    fontSize: 16,
     fontWeight: '600',
+    color: '#0F172A',
+  },
+  emptySubtitle: {
+    marginTop: 6,
     fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: 'white',
+    backgroundColor: '#F8FAFC',
   },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 20,
-    paddingTop: 60,
+    padding: 16,
+    backgroundColor: 'white',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
   modalCancelText: {
-    fontSize: 16,
     color: '#64748B',
+    fontSize: 16,
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0F172A',
   },
   modalSaveButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 10,
     backgroundColor: '#8B5CF6',
-    padding: 12,
-    borderRadius: 8,
   },
   modalSaveButtonDisabled: {
     backgroundColor: '#E2E8F0',
@@ -393,31 +388,32 @@ const styles = StyleSheet.create({
   modalSaveText: {
     color: 'white',
     fontWeight: '600',
-    fontSize: 14,
   },
   modalSaveTextDisabled: {
     color: '#94A3B8',
   },
   modalContent: {
-    padding: 20,
+    padding: 16,
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   inputLabel: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1E293B',
+    fontSize: 14,
+    color: '#334155',
     marginBottom: 8,
+    fontWeight: '600',
   },
   textInput: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: 'white',
+    borderRadius: 12,
     padding: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderRadius: 8,
+    color: '#0F172A',
   },
   textArea: {
-    height: 120,
+    minHeight: 120,
+    textAlignVertical: 'top',
   },
-}); 
+});

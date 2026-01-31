@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
-import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, TextInput } from 'react-native';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { 
   useAudioRecorder, 
   useAudioRecorderState, 
@@ -10,10 +10,11 @@ import {
   RecordingPresets,
   setAudioModeAsync 
 } from 'expo-audio';
-import { BottomTabParamList } from '../types';
+import { RootStackParamList } from '../types';
 import { WorldGenerationAPI } from '../api/worldGeneration';
+import { getWorldById, updateWorld, GoogleTokenManager } from '../api';
 
-type Props = BottomTabScreenProps<BottomTabParamList, 'WorldGeneration'>;
+type Props = NativeStackScreenProps<RootStackParamList, 'WorldGeneration'>;
 
 interface AudioState {
   isLoading: boolean;
@@ -22,7 +23,8 @@ interface AudioState {
   hasRecording: boolean; // Track if we have a recording ready to send
 }
 
-export const WorldGenerationScreen: React.FC<Props> = ({ navigation }) => {
+export const WorldGenerationScreen: React.FC<Props> = ({ navigation, route }) => {
+  const { worldId } = route.params;
   const [audioState, setAudioState] = useState<AudioState>({
     isLoading: false,
     hasResponse: false,
@@ -38,12 +40,45 @@ export const WorldGenerationScreen: React.FC<Props> = ({ navigation }) => {
   const responsePlayer = useAudioPlayer(responseAudioSource);
   const playerStatus = useAudioPlayerStatus(responsePlayer);
 
+  const [isWorldLoading, setIsWorldLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [worldTitle, setWorldTitle] = useState<string>('');
+  const [worldDescription, setWorldDescription] = useState<string>('');
+
   useEffect(() => {
     setupAudio();
+    loadWorld();
     return () => {
       cleanupAudio();
     };
   }, []);
+
+  const loadWorld = async () => {
+    try {
+      if (!worldId) {
+        Alert.alert('Error', 'Missing world id.');
+        navigation.goBack();
+        return;
+      }
+
+      setIsWorldLoading(true);
+      const token = await GoogleTokenManager.getValidToken();
+      if (!token) {
+        navigation.navigate('GoogleAuth');
+        return;
+      }
+
+      const world = await getWorldById(token, worldId);
+      setWorldTitle(world.title);
+      setWorldDescription(world.description || '');
+    } catch (error) {
+      console.error('Error loading world:', error);
+      Alert.alert('Error', 'Failed to load world.');
+      navigation.goBack();
+    } finally {
+      setIsWorldLoading(false);
+    }
+  };
 
   // Handle audio completion - reset when audio finishes playing
   useEffect(() => {
@@ -97,6 +132,35 @@ export const WorldGenerationScreen: React.FC<Props> = ({ navigation }) => {
     }));
   };
 
+  const saveWorldEdits = async () => {
+    try {
+      if (!worldId) return;
+      if (!worldTitle.trim()) {
+        Alert.alert('Error', 'World title cannot be empty.');
+        return;
+      }
+
+      setIsSaving(true);
+      const token = await GoogleTokenManager.getValidToken();
+      if (!token) {
+        navigation.navigate('GoogleAuth');
+        return;
+      }
+
+      const updated = await updateWorld(token, worldId, {
+        title: worldTitle.trim(),
+        description: worldDescription,
+      });
+      setWorldTitle(updated.title);
+      setWorldDescription(updated.description || '');
+    } catch (error) {
+      console.error('Error saving world:', error);
+      Alert.alert('Error', 'Failed to save changes.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const startRecording = async () => {
     try {
       if (!audioState.permissionGranted) {
@@ -133,6 +197,11 @@ export const WorldGenerationScreen: React.FC<Props> = ({ navigation }) => {
         return;
       }
 
+      if (!worldId) {
+        Alert.alert('Error', 'Missing world id.');
+        return;
+      }
+
       setAudioState(prev => ({ ...prev, isLoading: true }));
 
       // Convert recording to blob for API call
@@ -143,30 +212,36 @@ export const WorldGenerationScreen: React.FC<Props> = ({ navigation }) => {
       await audioRecorder.prepareToRecordAsync();
 
       // Send to backend and get response
-      const responseBlob = await WorldGenerationAPI.interact(audioBlob);
+      const result = await WorldGenerationAPI.interact(worldId, audioBlob);
+      const responseBlob = result.audioBlob;
+      const updatedDocument = result.document;
 
       // Debug: Inspect received audio response
       console.log('[WorldGen] Received audio response:', responseBlob);
-      console.log('[WorldGen] Type:', responseBlob.type);
-      console.log('[WorldGen] Size:', responseBlob.size);
-      const arrayBuffer = await responseBlob.arrayBuffer();
-      const byteArray = new Uint8Array(arrayBuffer);
-      const header = Array.from(byteArray.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ');
-      console.log('[WorldGen] First 16 bytes (hex):', header);
-      const textHeader = String.fromCharCode(...byteArray.slice(0, 8));
-      console.log('[WorldGen] First 8 bytes (ASCII):', textHeader);
-      if (textHeader.startsWith('{')) {
-        // Looks like JSON, not audio
-        try {
-          const jsonText = new TextDecoder('utf-8').decode(byteArray);
-          console.log('[WorldGen] ERROR: Received JSON instead of audio:', jsonText);
-        } catch (e) {
-          console.log('[WorldGen] ERROR: Received non-audio, could not decode as JSON.');
+      if (responseBlob) {
+        console.log('[WorldGen] Type:', responseBlob.type);
+        console.log('[WorldGen] Size:', responseBlob.size);
+        const arrayBuffer = await responseBlob.arrayBuffer();
+        const byteArray = new Uint8Array(arrayBuffer);
+        const header = Array.from(byteArray.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+        console.log('[WorldGen] First 16 bytes (hex):', header);
+        const textHeader = String.fromCharCode(...byteArray.slice(0, 8));
+        console.log('[WorldGen] First 8 bytes (ASCII):', textHeader);
+        if (textHeader.startsWith('{')) {
+          // Looks like JSON, not audio
+          try {
+            const jsonText = new TextDecoder('utf-8').decode(byteArray);
+            console.log('[WorldGen] ERROR: Received JSON instead of audio:', jsonText);
+          } catch (e) {
+            console.log('[WorldGen] ERROR: Received non-audio, could not decode as JSON.');
+          }
+        } else if (!textHeader.startsWith('RIFF')) {
+          console.log('[WorldGen] WARNING: Audio does not start with RIFF header, may not be WAV.');
+        } else {
+          console.log('[WorldGen] Audio response appears to be WAV format.');
         }
-      } else if (!textHeader.startsWith('RIFF')) {
-        console.log('[WorldGen] WARNING: Audio does not start with RIFF header, may not be WAV.');
       } else {
-        console.log('[WorldGen] Audio response appears to be WAV format.');
+        console.log('[WorldGen] No audio returned from server.');
       }
 
       // Clean up any existing response audio URL
@@ -175,8 +250,14 @@ export const WorldGenerationScreen: React.FC<Props> = ({ navigation }) => {
       }
 
       // Create URL for new response audio
-      const responseUrl = URL.createObjectURL(responseBlob);
-      setResponseAudioSource(responseUrl);
+      const responseUrl = responseBlob ? URL.createObjectURL(responseBlob) : null;
+      if (responseUrl) setResponseAudioSource(responseUrl);
+
+      // Update UI document if provided
+      if (updatedDocument) {
+        console.log('[WorldGen] Updated document:', updatedDocument);
+        setWorldDescription(updatedDocument);
+      }
 
       setAudioState(prev => ({ 
         ...prev, 
@@ -236,28 +317,23 @@ export const WorldGenerationScreen: React.FC<Props> = ({ navigation }) => {
     return '#8B5CF6'; // Purple default
   };
 
-  const getStatusText = () => {
-    if (recorderState.isRecording) {
-      return 'Recording... Press the button to stop';
-    } else if (audioState.hasRecording) {
-      return 'Press send to submit your recording';
-    } else {
-      return 'Press the microphone to start recording your world description';
-    }
-  };
+  // Status text removed — UI shows only buttons and rendered document
 
   return (
     <View style={styles.container}>
+      {/* Back button top-left */}
+      <View style={styles.backContainer}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.backButtonText}>←</Text>
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.content}>
-        <Text style={styles.title}>World Generation Engine</Text>
-        <Text style={styles.subtitle}>Create your own adventure worlds</Text>
-        
         {/* Response Audio Controls - Top Right */}
         <View style={styles.responseContainer}>
           {audioState.isLoading && (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#8B5CF6" />
-              <Text style={styles.loadingText}>Processing...</Text>
             </View>
           )}
           
@@ -273,11 +349,39 @@ export const WorldGenerationScreen: React.FC<Props> = ({ navigation }) => {
           )}
         </View>
 
-        <View style={styles.placeholder}>
-          <Text style={styles.placeholderText}>🎙️</Text>
-          <Text style={styles.description}>
-            {getStatusText()}
-          </Text>
+        <View style={styles.documentContainer}>
+          {isWorldLoading ? (
+            <ActivityIndicator size="small" color="#8B5CF6" />
+          ) : (
+            <>
+              <TextInput
+                style={styles.titleInput}
+                value={worldTitle}
+                onChangeText={setWorldTitle}
+                placeholder="World title"
+                placeholderTextColor="#94A3B8"
+                editable={!isSaving && !audioState.isLoading}
+              />
+              <Text style={styles.divider}>--</Text>
+              <TextInput
+                style={styles.descriptionInput}
+                value={worldDescription}
+                onChangeText={setWorldDescription}
+                placeholder="World description"
+                placeholderTextColor="#94A3B8"
+                multiline
+                editable={!isSaving && !audioState.isLoading}
+              />
+
+              <TouchableOpacity
+                style={[styles.saveButton, (isSaving || audioState.isLoading) && styles.saveButtonDisabled]}
+                onPress={saveWorldEdits}
+                disabled={isSaving || audioState.isLoading}
+              >
+                <Text style={styles.saveButtonText}>{isSaving ? 'Saving…' : 'Save'}</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </View>
 
@@ -301,6 +405,29 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8FAFC',
+  },
+  backContainer: {
+    position: 'absolute',
+    top: 60,
+    left: 20,
+    zIndex: 2,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'white',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  backButtonText: {
+    fontSize: 22,
+    color: '#0F172A',
   },
   content: {
     flex: 1,
@@ -348,6 +475,53 @@ const styles = StyleSheet.create({
     top: 60,
     right: 20,
     zIndex: 1,
+  },
+  documentContainer: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 20,
+    maxWidth: 700,
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  titleInput: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#0F172A',
+    paddingVertical: 8,
+  },
+  divider: {
+    color: '#94A3B8',
+    marginVertical: 6,
+    fontSize: 16,
+  },
+  descriptionInput: {
+    fontSize: 16,
+    color: '#0F172A',
+    lineHeight: 22,
+    minHeight: 160,
+    textAlignVertical: 'top',
+    paddingVertical: 8,
+  },
+  saveButton: {
+    marginTop: 12,
+    alignSelf: 'flex-end',
+    backgroundColor: '#0F172A',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
+  },
+  saveButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
   },
   loadingContainer: {
     alignItems: 'center',

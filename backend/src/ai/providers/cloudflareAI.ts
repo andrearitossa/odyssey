@@ -1,5 +1,8 @@
 import {
   AIModality,
+  TextToTextRequest,
+  TextToTextResponse,
+  SupportsTextToText,
   SupportsSpeechToText,
   SupportsTextToSpeech,
   AIProviderError,
@@ -9,12 +12,12 @@ export interface CloudflareAIConfig {
   apiToken: string;
   accountId: string;
   baseUrl?: string;
+  model?: string;
 }
 
-import { Logger } from '../../utils/logger';
-export class CloudflareAIProvider implements SupportsSpeechToText, SupportsTextToSpeech {
+export class CloudflareAIProvider implements SupportsTextToText, SupportsSpeechToText, SupportsTextToSpeech {
   readonly name = 'cloudflare';
-  readonly supportedModalities = [AIModality.SpeechToText, AIModality.TextToSpeech];
+  readonly supportedModalities = [AIModality.TextToText, AIModality.SpeechToText, AIModality.TextToSpeech];
 
   private config: CloudflareAIConfig;
   private baseUrl: string;
@@ -22,6 +25,79 @@ export class CloudflareAIProvider implements SupportsSpeechToText, SupportsTextT
   constructor(config: CloudflareAIConfig) {
     this.config = config;
     this.baseUrl = config.baseUrl || `https://api.cloudflare.com/client/v4/accounts/${this.config.accountId}/ai/run`;
+    this.config.model ||= '@cf/openai/gpt-oss-120b';
+  }
+
+  /**
+   * Generates text using Cloudflare Workers AI.
+   * Model defaults to: @cf/openai/gpt-oss-120b
+   */
+  async generateText(request: TextToTextRequest): Promise<TextToTextResponse> {
+    const url = `${this.baseUrl}/${this.config.model}`;
+
+    // OpenAI-compatible chat shape is widely supported.
+    // Keep the payload minimal and tolerate provider-side differences.
+    const requestBody: any = {
+      messages: request.messages.map(({ role, content }) => ({ role, content })),
+      ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+      ...(request.maxTokens !== undefined ? { max_tokens: request.maxTokens } : {}),
+      ...(request.stopSequences?.length ? { stop: request.stopSequences } : {})
+    };
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.config.apiToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new AIProviderError(`Cloudflare text generation API error: ${errorText}`, this.name, { status: response.status });
+      }
+
+      const data: any = await response.json();
+      const { content, usage } = this.extractTextAndUsage(data);
+
+      if (!content) {
+        throw new AIProviderError('Empty text generation response from Cloudflare', this.name, data);
+      }
+
+      return { content, usage };
+    } catch (err) {
+      console.error('[CloudflareAIProvider] Text generation error:', err);
+      throw err instanceof AIProviderError
+        ? err
+        : new AIProviderError('Text generation failed', this.name, err);
+    }
+  }
+
+  private extractTextAndUsage(data: any): { content: string; usage?: TextToTextResponse['usage'] } {
+    // Common Workers AI shapes (vary per model):
+    // - { result: { response: string } }
+    // - { result: { text: string } }
+    // - OpenAI-like: { result: { choices: [{ message: { content } }] }, usage }
+    const content =
+      (typeof data?.result?.response === 'string' ? data.result.response : undefined) ??
+      (typeof data?.result?.text === 'string' ? data.result.text : undefined) ??
+      (typeof data?.result?.output_text === 'string' ? data.result.output_text : undefined) ??
+      (typeof data?.result?.choices?.[0]?.message?.content === 'string' ? data.result.choices[0].message.content : undefined) ??
+      (typeof data?.choices?.[0]?.message?.content === 'string' ? data.choices[0].message.content : undefined) ??
+      '';
+
+    const usageRaw = data?.result?.usage ?? data?.usage;
+    const usage = usageRaw
+      ? {
+          promptTokens: usageRaw.prompt_tokens ?? usageRaw.promptTokens ?? 0,
+          completionTokens: usageRaw.completion_tokens ?? usageRaw.completionTokens ?? 0,
+          totalTokens: usageRaw.total_tokens ?? usageRaw.totalTokens ?? 0,
+        }
+      : undefined;
+
+    return { content: content.trim(), usage };
   }
 
   /**
@@ -88,8 +164,8 @@ export class CloudflareAIProvider implements SupportsSpeechToText, SupportsTextT
    * The API expects JSON input and returns a raw audio file.
    */
   async synthesizeSpeech(text: string): Promise<Blob> {
-    // Note: Using a standard Meta model. You can swap this for others like '@cf/microsoft/speecht5-tts'.
-    const url = `${this.baseUrl}/@cf/myshell-ai/melotts`;
+    // Cloudflare TTS model: https://developers.cloudflare.com/workers-ai/models/aura-1/ 
+    const url = `${this.baseUrl}/@cf/deepgram/aura-1`;
     
     try {
       const response = await fetch(url, {
@@ -99,8 +175,7 @@ export class CloudflareAIProvider implements SupportsSpeechToText, SupportsTextT
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          prompt: text,
-          lang: "en"
+          text: text
         }),
       });
 

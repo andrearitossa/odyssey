@@ -105,11 +105,11 @@ export const GoogleAuthScreen: React.FC<Props> = ({ navigation }) => {
       <View style={styles.container}>
         <View style={styles.content}>
           <View style={styles.logoContainer}>
-            <Image 
+            {/* <Image 
               source={require('../../assets/icon.png')} 
               style={styles.logo}
               resizeMode="contain"
-            />
+            /> */}
             <Text style={styles.title}>Odyssey</Text>
             <Text style={styles.subtitle}>AI-Powered Storytelling</Text>
           </View>
@@ -139,11 +139,11 @@ export const GoogleAuthScreen: React.FC<Props> = ({ navigation }) => {
       <View style={styles.container}>
         <View style={styles.content}>
           <View style={styles.logoContainer}>
-            <Image 
+            {/* <Image 
               source={require('../../assets/icon.png')} 
               style={styles.logo}
               resizeMode="contain"
-            />
+            /> */}
             <Text style={styles.title}>Odyssey</Text>
             <Text style={styles.subtitle}>AI-Powered Storytelling</Text>
           </View>

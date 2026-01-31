@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Modal, TextInput, Alert, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList, User, UserWorld } from '../types';
+import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import { BottomTabParamList, User, UserWorld } from '../types';
 import { ProfileAPI, SUPPORTED_LANGUAGES, SupportedLanguage } from '../api/profile';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'MainTabs'>;
+type Props = BottomTabScreenProps<BottomTabParamList, 'Profile'>;
 
 export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
   const [profile, setProfile] = useState<{ user: User; userWorlds: UserWorld[] } | null>(null);
@@ -89,7 +89,7 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
 
   const selectWorld = (world: UserWorld) => {
     // Navigate to world session
-    navigation.navigate('Session', { 
+    navigation.getParent()?.navigate('Session', { 
       worldId: world.world_id, 
       worldTitle: world.world_title 
     });

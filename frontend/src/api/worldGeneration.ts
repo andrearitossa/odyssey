@@ -14,10 +14,9 @@ export class WorldGenerationAPI {
   /**
    * Send audio data to the world generation endpoint and receive audio response
    */
-  static async interact(audioBlob: Blob): Promise<Blob> {
+  static async interact(worldId: string, audioBlob: Blob): Promise<{ audioBlob?: Blob; document?: string; error?: string }> {
     try {
-      // Convert blob to FormData or direct body
-      const response = await fetch(`${API_URL}/world-generation/interact`, {
+      const response = await fetch(`${API_URL}/world-generation/${encodeURIComponent(worldId)}/interact`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${await GoogleTokenManager.getStoredToken()}`,
@@ -27,11 +26,28 @@ export class WorldGenerationAPI {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const text = await response.text();
+        throw new Error(`HTTP ${response.status}: ${text}`);
       }
 
-      // Return the audio blob directly
-      return await response.blob();
+      const data = await response.json();
+      if (!data.success) {
+        return { error: data.error || 'Unknown error' };
+      }
+
+      // Convert base64 audio back to blob
+      let audioBlobResp: Blob | undefined = undefined;
+      if (data.audio_base64) {
+        const binaryString = atob(data.audio_base64);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        audioBlobResp = new Blob([bytes.buffer], { type: data.audio_content_type || 'audio/wav' });
+      }
+
+      return { audioBlob: audioBlobResp, document: data.document };
     } catch (error) {
       console.error('World Generation API Error:', error);
       throw error;

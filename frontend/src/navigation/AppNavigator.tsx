@@ -7,6 +7,7 @@ import { RootStackParamList } from '../types';
 
 import { GoogleAuthScreen } from '../screens/GoogleAuthScreen';
 import { SessionScreen } from '../screens/SessionScreen';
+import { WorldGenerationScreen } from '../screens/WorldGenerationScreen';
 import { BottomTabNavigator } from './BottomTabNavigator';
 import { ChaptersScreen } from '../screens/ChaptersScreen';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
@@ -50,6 +51,7 @@ const AppStack: React.FC = () => {
     >
       <Stack.Screen name="GoogleAuth" component={GoogleAuthScreen} />
       <Stack.Screen name="MainTabs" component={BottomTabNavigator} />
+      <Stack.Screen name="WorldGeneration" component={WorldGenerationScreen} />
       <Stack.Screen name="Session" component={SessionScreen} />
       <Stack.Screen name="Chapters" component={ChaptersScreen} />
     </Stack.Navigator>

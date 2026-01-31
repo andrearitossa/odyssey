@@ -1,10 +1,8 @@
 import { createJsonResponse, createErrorResponse, parseJsonBody } from '../utils/response';
 import { extractBearerToken, extractCookieValue } from '../utils/auth';
-import { logRequest } from '../utils/requestLogger';
 import { handleServerError } from '../utils/errorHandling';
 import { OAuthService, UserDbService } from '../database';
 import { Env } from '../routes';
-import { AuthService } from '../utils/authService';
 import { OAuthUtils } from '../utils/oauthUtils';
 import {
   exchangeCodeForTokens,
@@ -22,21 +20,17 @@ export class GoogleAuthRouter {
   private oAuth: OAuthService;
   private userDB: UserDbService;
   private env: Env;
-  private authService: AuthService;
   private oauthUtils: OAuthUtils;
 
-  constructor(env: Env, oAuth: OAuthService, userDB: UserDbService, authService: AuthService) {
+  constructor(env: Env, oAuth: OAuthService, userDB: UserDbService) {
     this.oAuth = oAuth;
     this.userDB = userDB;
     this.env = env;
-    this.authService = authService;
     this.oauthUtils = new OAuthUtils(this.oAuth, this.userDB, this.env);
     this.oauthUtils.validateOAuthConfiguration();
   }
 
   async route(request: Request, ctx?: ExecutionContext): Promise<Response | null> {
-    logRequest(request);
-    
     const url = new URL(request.url);
     const method = request.method;
     const pathname = url.pathname;

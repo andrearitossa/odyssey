@@ -1,11 +1,8 @@
 import { createJsonResponse, createErrorResponse, parseJsonBody } from '../utils/response';
 import { validateProfileUpdateRequest } from '../utils/validation';
-import { logRequest } from '../utils/requestLogger';
-import { handleAuthError, handleServerError, isAuthError } from '../utils/errorHandling';
-import { OAuthService, UserDbService } from '../database';
-import { Env } from '../routes';
+import { handleServerError } from '../utils/errorHandling';
+import { UserDbService } from '../database';
 import { User } from '../database/db-types';
-import { AuthService } from '../utils/authService';
 
 export interface ProfileUpdateRequest {
   name?: string;
@@ -26,16 +23,12 @@ export interface ProfileResponse {
 
 export class ProfileRouter {
   private userDB: UserDbService;
-  private authService: AuthService;
 
-  constructor(authService: AuthService, userDB: UserDbService) {
-    this.authService = authService;
+  constructor(userDB: UserDbService) {
     this.userDB = userDB;
   }
 
   async route(request: Request, user: User, ctx?: ExecutionContext): Promise<Response | null> {
-    logRequest(request);
-    
     const url = new URL(request.url);
     const method = request.method;
     const pathname = url.pathname;

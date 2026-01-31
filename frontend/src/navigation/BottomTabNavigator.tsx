@@ -3,7 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { BottomTabParamList } from '../types';
 
-import { WorldGenerationScreen } from '../screens/WorldGenerationScreen';
+import { HomeScreen } from '../screens/HomeScreen';
 import { WorldSelectionScreen } from '../screens/WorldSelectionScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 
@@ -12,14 +12,15 @@ const Tab = createBottomTabNavigator<BottomTabParamList>();
 export const BottomTabNavigator: React.FC = () => {
   return (
     <Tab.Navigator
+      initialRouteName="Home"
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: keyof typeof Ionicons.glyphMap;
 
-          if (route.name === 'WorldGeneration') {
-            iconName = focused ? 'add-circle' : 'add-circle-outline';
-          } else if (route.name === 'WorldSelection') {
+          if (route.name === 'Home') {
             iconName = focused ? 'home' : 'home-outline';
+          } else if (route.name === 'Search') {
+            iconName = focused ? 'search' : 'search-outline';
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
           } else {
@@ -43,17 +44,17 @@ export const BottomTabNavigator: React.FC = () => {
       })}
     >
       <Tab.Screen 
-        name="WorldGeneration" 
-        component={WorldGenerationScreen}
+        name="Home" 
+        component={HomeScreen}
         options={{
-          title: 'World Generation',
+          title: 'Your Worlds',
         }}
       />
       <Tab.Screen 
-        name="WorldSelection" 
+        name="Search" 
         component={WorldSelectionScreen}
         options={{
-          title: 'Choose Your Adventure',
+          title: 'Search',
         }}
       />
       <Tab.Screen 

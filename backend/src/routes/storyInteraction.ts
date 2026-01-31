@@ -1,6 +1,5 @@
 import { createJsonResponse, createErrorResponse, parseJsonBody, corsHeaders } from '../utils/response';
 import { validateRequiredFields, generateSessionId, isValidWorldId, isValidSessionId } from '../utils/validation';
-import { logRequest } from '../utils/requestLogger';
 import { Logger } from '../utils/logger';
 import { sanitizeInput } from '../utils/sanitization';
 
@@ -8,15 +7,12 @@ import { InteractWithStoryRequest } from './api-types';
 import { Env } from '../routes';
 import { StoryService } from '../story/storyService';
 import { AIServiceManager, GeminiProvider, HuggingFaceProvider } from '../ai';
-import { OAuthService, UserDbService, WorldDbService, SessionDbService, StoryModelDbService, ChapterDbService, MessageDbService } from '../database';
+import { WorldDbService, SessionDbService, StoryModelDbService, ChapterDbService, MessageDbService } from '../database';
 import { Chapter } from '../database/db-types';
-import { AuthService } from '../utils/authService';
 import { User } from '../database/db-types';
 import { AIModality, AIProviderType } from '../ai';
 
 export class StoryInteractionRouter {
-    private oAuth: OAuthService;
-    private userDB: UserDbService;
     private worldDB: WorldDbService;
     private sessionDB: SessionDbService;
     private storyModelDB: StoryModelDbService;
@@ -24,9 +20,8 @@ export class StoryInteractionRouter {
     private messageDB: MessageDbService;
     private aiService: AIServiceManager;
     private storyService: StoryService;
-    private authService: AuthService;
 
-    constructor(env: Env, authService: AuthService, userDB: UserDbService) {
+    constructor(env: Env) {
         const timer = Date.now();
         const context = {
             component: 'StoryInteractionRouter',
@@ -35,12 +30,7 @@ export class StoryInteractionRouter {
 
         Logger.info('Initializing StoryInteractionRouter', context);
 
-        // Use passed-in services
-        this.authService = authService;
-        this.userDB = userDB;
-
         // Instantiate other DB services using env.DB
-        this.oAuth = new OAuthService(env.DB);
         this.worldDB = new WorldDbService(env.DB);
         this.sessionDB = new SessionDbService(env.DB);
         this.storyModelDB = new StoryModelDbService(env.DB);
@@ -51,15 +41,18 @@ export class StoryInteractionRouter {
         if (env.GEMINI_API_KEY) {
             const geminiProvider = new GeminiProvider({ apiKey: env.GEMINI_API_KEY });
             this.aiService.registerProvider(geminiProvider);
+
             this.aiService.setDefaultProviderForModality(AIModality.TextToText, AIProviderType.Gemini);
             Logger.info('AI provider configured', { ...context, metadata: { provider: 'Gemini' } });
-        } else if (env.HUGGINGFACE_API_KEY?.startsWith('hf_')) {
-            const hfProvider = new HuggingFaceProvider({ apiKey: env.HUGGINGFACE_API_KEY, model: 'mistralai/Mistral-7B-Instruct-v0.3' });
-            this.aiService.registerProvider(hfProvider);
-            this.aiService.setDefaultProviderForModality(AIModality.TextToText, AIProviderType.HuggingFace);
-            Logger.info('AI provider configured', { ...context, metadata: { provider: 'HuggingFace', model: 'mistralai/Mistral-7B-Instruct-v0.3' } });
-        } else {
-            Logger.warn('No AI provider configured - service will not work properly', context);
+        }
+        // else if (env.HUGGINGFACE_API_KEY?.startsWith('hf_')) {
+        //     const hfProvider = new HuggingFaceProvider({ apiKey: env.HUGGINGFACE_API_KEY, model: 'mistralai/Mistral-7B-Instruct-v0.3' });
+        //     this.aiService.registerProvider(hfProvider);
+        //     this.aiService.setDefaultProviderForModality(AIModality.TextToText, AIProviderType.HuggingFace);
+        //     Logger.info('AI provider configured', { ...context, metadata: { provider: 'HuggingFace', model: 'mistralai/Mistral-7B-Instruct-v0.3' } });
+        // } 
+        else {
+            Logger.warn('No AI provider configured', context);
         }
 
         this.storyService = new StoryService(this.aiService);
@@ -80,7 +73,6 @@ export class StoryInteractionRouter {
         };
 
         Logger.debug('Processing route request', context);
-        logRequest(request);
 
         if (pathname === '/sessions/new' && method === 'POST') {
             Logger.info('Routing to create session', { ...context, operation: 'ROUTE_TO_CREATE_SESSION', duration: Date.now() - timer });
