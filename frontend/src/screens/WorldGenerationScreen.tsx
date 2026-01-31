@@ -1,5 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, TextInput } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+  TextInput,
+  ScrollView,
+  Platform,
+  KeyboardAvoidingView,
+  UIManager,
+} from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { 
   useAudioRecorder, 
@@ -10,6 +22,7 @@ import {
   RecordingPresets,
   setAudioModeAsync 
 } from 'expo-audio';
+import Markdown from 'react-native-markdown-display';
 import { RootStackParamList } from '../types';
 import { WorldGenerationAPI } from '../api/worldGeneration';
 import { getWorldById, updateWorld, GoogleTokenManager } from '../api';
@@ -45,10 +58,17 @@ export const WorldGenerationScreen: React.FC<Props> = ({ navigation, route }) =>
   const [isSaving, setIsSaving] = useState(false);
   const [worldTitle, setWorldTitle] = useState<string>('');
   const [worldDescription, setWorldDescription] = useState<string>('');
+  const descriptionInputRef = useRef<TextInput | null>(null);
+  const [descriptionHeight, setDescriptionHeight] = useState(260);
 
   useEffect(() => {
     setupAudio();
     loadWorld();
+
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+
     return () => {
       cleanupAudio();
     };
@@ -112,14 +132,14 @@ export const WorldGenerationScreen: React.FC<Props> = ({ navigation, route }) =>
 
   const cleanupAudio = () => {
     // Cleanup response audio URL if it exists
-    if (responseAudioSource) {
+    if (responseAudioSource && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
       URL.revokeObjectURL(responseAudioSource);
     }
   };
 
   const resetToInitialState = () => {
     // Clean up response audio
-    if (responseAudioSource) {
+    if (responseAudioSource && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
       URL.revokeObjectURL(responseAudioSource);
       setResponseAudioSource(null);
     }
@@ -246,7 +266,7 @@ export const WorldGenerationScreen: React.FC<Props> = ({ navigation, route }) =>
       }
 
       // Clean up any existing response audio URL
-      if (responseAudioSource) {
+      if (responseAudioSource && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
         URL.revokeObjectURL(responseAudioSource);
       }
 
@@ -322,13 +342,6 @@ export const WorldGenerationScreen: React.FC<Props> = ({ navigation, route }) =>
 
   return (
     <Screen style={styles.container}>
-      {/* Back button top-left */}
-      <View style={styles.backContainer}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.backButtonText}>←</Text>
-        </TouchableOpacity>
-      </View>
-
       <View style={styles.content}>
         {/* Response Audio Controls - Top Right */}
         <View style={styles.responseContainer}>
@@ -350,44 +363,75 @@ export const WorldGenerationScreen: React.FC<Props> = ({ navigation, route }) =>
           )}
         </View>
 
-        <View style={styles.documentContainer}>
-          {isWorldLoading ? (
-            <ActivityIndicator size="small" color={theme.colors.wine} />
-          ) : (
-            <>
+        {isWorldLoading ? (
+          <ActivityIndicator size="small" color={theme.colors.wine} />
+        ) : (
+          <KeyboardAvoidingView
+            style={styles.editorKeyboard}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+          >
+            <ScrollView
+              style={styles.editorScroll}
+              contentContainerStyle={styles.editorScrollContent}
+              keyboardShouldPersistTaps="handled"
+            >
               <TextInput
                 style={styles.titleInput}
                 value={worldTitle}
                 onChangeText={setWorldTitle}
                 placeholder="World title"
-                placeholderTextColor="#94A3B8"
-                editable={!isSaving && !audioState.isLoading}
-              />
-              <Text style={styles.divider}>--</Text>
-              <TextInput
-                style={styles.descriptionInput}
-                value={worldDescription}
-                onChangeText={setWorldDescription}
-                placeholder="World description"
-                placeholderTextColor="#94A3B8"
-                multiline
+                placeholderTextColor={theme.colors.textMuted}
                 editable={!isSaving && !audioState.isLoading}
               />
 
-              <TouchableOpacity
-                style={[styles.saveButton, (isSaving || audioState.isLoading) && styles.saveButtonDisabled]}
-                onPress={saveWorldEdits}
-                disabled={isSaving || audioState.isLoading}
-              >
-                <Text style={styles.saveButtonText}>{isSaving ? 'Saving…' : 'Save'}</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
+              <Text style={styles.divider}>--</Text>
+
+              <View style={[styles.descriptionBlock, { height: Math.max(260, descriptionHeight) }]}>
+                <Markdown style={markdownStyles}>
+                  {(worldDescription && worldDescription.trim().length > 0)
+                    ? worldDescription
+                    : '*Tap to start writing your world…*'}
+                </Markdown>
+
+                <TextInput
+                  ref={(r) => {
+                    descriptionInputRef.current = r;
+                  }}
+                  style={[styles.descriptionInputOverlay, { height: Math.max(260, descriptionHeight) }]}
+                  value={worldDescription}
+                  onChangeText={setWorldDescription}
+                  onContentSizeChange={(e) => {
+                    const nextHeight = Math.ceil(e.nativeEvent.contentSize.height);
+                    if (Number.isFinite(nextHeight) && nextHeight > 0) {
+                      setDescriptionHeight(nextHeight);
+                    }
+                  }}
+                  placeholder="Write world description (Markdown supported)…"
+                  placeholderTextColor={theme.colors.textMuted}
+                  multiline
+                  editable={!isSaving && !audioState.isLoading}
+                  textAlignVertical="top"
+                  selectionColor={theme.colors.wine}
+                  autoCorrect={false}
+                  autoCapitalize="sentences"
+                  spellCheck={false}
+                  scrollEnabled={false}
+                />
+              </View>
+
+              <View style={styles.bottomSpacer} />
+            </ScrollView>
+          </KeyboardAvoidingView>
+        )}
       </View>
 
-      {/* Fixed Bottom Button */}
+      {/* Fixed Bottom Buttons */}
       <View style={styles.bottomContainer}>
+        <TouchableOpacity style={styles.bottomBackButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.bottomBackButtonText}>←</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity
           style={[styles.bottomButton, { backgroundColor: getBottomButtonColor() }]}
           onPress={handleBottomButtonPress}
@@ -396,6 +440,14 @@ export const WorldGenerationScreen: React.FC<Props> = ({ navigation, route }) =>
           <Text style={styles.bottomButtonText}>
             {getBottomButtonIcon()}
           </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.bottomSaveButton, (isSaving || audioState.isLoading) && styles.bottomSaveButtonDisabled]}
+          onPress={saveWorldEdits}
+          disabled={isSaving || audioState.isLoading}
+        >
+          <Text style={styles.bottomSaveButtonText}>{isSaving ? 'Saving…' : 'Save'}</Text>
         </TouchableOpacity>
       </View>
     </Screen>
@@ -434,91 +486,54 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#64748B',
-    marginBottom: 40,
-    textAlign: 'center',
-  },
-  placeholder: {
-    alignItems: 'center',
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 40,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    maxWidth: 300,
-  },
-  placeholderText: {
-    fontSize: 48,
-    marginBottom: 20,
-  },
-  description: {
-    fontSize: 14,
-    color: '#64748B',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
   responseContainer: {
     position: 'absolute',
     top: 60,
     right: 20,
     zIndex: 1,
   },
-  documentContainer: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: 12,
-    padding: 20,
-    maxWidth: 700,
+  editorKeyboard: {
     width: '100%',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    ...theme.shadow,
+    flex: 1,
+    alignSelf: 'stretch',
+  },
+  editorScroll: {
+    width: '100%',
+    maxWidth: 740,
+    alignSelf: 'center',
+  },
+  editorScrollContent: {
+    paddingTop: 6,
+    paddingBottom: 140,
   },
   titleInput: {
     fontSize: 22,
     fontWeight: '700',
     color: theme.colors.text,
     paddingVertical: 8,
+    textAlign: 'center',
   },
   divider: {
     color: theme.colors.goldDark,
     marginVertical: 6,
     fontSize: 16,
   },
-  descriptionInput: {
-    fontSize: 16,
-    color: theme.colors.text,
-    lineHeight: 22,
-    minHeight: 160,
-    textAlignVertical: 'top',
+  descriptionBlock: {
+    minHeight: 260,
+    paddingVertical: 2,
+    position: 'relative',
+  },
+  descriptionInputOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     paddingVertical: 8,
-  },
-  saveButton: {
-    marginTop: 12,
-    alignSelf: 'flex-end',
-    backgroundColor: theme.colors.wine,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-  },
-  saveButtonDisabled: {
-    opacity: 0.6,
-  },
-  saveButtonText: {
-    color: theme.colors.textOnWine,
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 16,
+    lineHeight: 22,
+    color: 'transparent',
+    backgroundColor: 'transparent',
   },
   loadingContainer: {
     alignItems: 'center',
@@ -549,12 +564,32 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: 'white',
   },
+  bottomSpacer: {
+    height: 40,
+  },
   bottomContainer: {
     position: 'absolute',
     bottom: 40,
     left: 0,
     right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+  },
+  bottomBackButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.goldSoft,
+    justifyContent: 'center',
     alignItems: 'center',
+    ...theme.shadow,
+  },
+  bottomBackButtonText: {
+    fontSize: 24,
+    color: theme.colors.wine,
   },
   bottomButton: {
     width: 80,
@@ -573,4 +608,82 @@ const styles = StyleSheet.create({
     color: theme.colors.textOnWine,
     fontWeight: 'bold',
   },
+  bottomSaveButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: theme.colors.wine,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.goldSoft,
+    ...theme.shadow,
+  },
+  bottomSaveButtonDisabled: {
+    opacity: 0.6,
+  },
+  bottomSaveButtonText: {
+    color: theme.colors.textOnWine,
+    fontSize: 14,
+    fontWeight: '600',
+  },
 }); 
+
+const markdownStyles = StyleSheet.create({
+  body: {
+    color: theme.colors.text,
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  heading1: {
+    color: theme.colors.text,
+    fontSize: 24,
+    fontWeight: '800',
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  heading2: {
+    color: theme.colors.text,
+    fontSize: 20,
+    fontWeight: '800',
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  heading3: {
+    color: theme.colors.text,
+    fontSize: 18,
+    fontWeight: '800',
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  paragraph: {
+    marginTop: 6,
+    marginBottom: 6,
+  },
+  bullet_list: {
+    marginTop: 6,
+    marginBottom: 6,
+  },
+  ordered_list: {
+    marginTop: 6,
+    marginBottom: 6,
+  },
+  code_inline: {
+    backgroundColor: theme.colors.surface,
+    color: theme.colors.text,
+  },
+  code_block: {
+    backgroundColor: theme.colors.surface,
+    color: theme.colors.text,
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  blockquote: {
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.border,
+    paddingLeft: 10,
+    opacity: 0.95,
+  },
+});

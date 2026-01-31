@@ -177,11 +177,16 @@ Assist him into creating a world, maintaining the document; representing the wor
 - Refactor it conservately following closely user requests.
 - Refactor it only when the user intent has been specified. Dont assume it.
 
+The world document is treated as Markdown (CommonMark). The "document_update" you output MUST be a valid Markdown document:
+- Preserve existing Markdown structure and formatting where possible (headings, lists, emphasis).
+- Prefer simple Markdown (headings, bullet lists, short paragraphs).
+- Do NOT wrap the entire document in triple backticks.
+
 When you reply, return a single valid JSON object and nothing else with the following keys:
 1. "speech_text":
   a short (one or two sentences) utterance for the user, for text-to-speech synthesis.
   Keep it concise (<= 30 words).
 2. "document_update":
-  the full, updated world description text that will replace the current document in the database.
+  the full, updated world description text (Markdown) that will replace the current document in the database.
 
 Do not include ANY explanatory text or additional fields outside that JSON object.`;
