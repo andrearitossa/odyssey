@@ -1,5 +1,23 @@
-import { API_URL, authenticatedFetch, handleResponse } from './api';
+import { API_URL, apiClient, authenticatedFetch, handleResponse } from './api';
 import { SessionData, GetChaptersResponse } from '../types';
+
+export interface SessionSummary {
+  session_id: string;
+  world_id: string;
+  world_title: string;
+  world_description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StoredSessionMessage {
+  id: number;
+  session_id: string;
+  type: 'user' | 'narrator';
+  content: string;
+  chapter_number: number;
+  created_at: string;
+}
 
 /**
  * Session Management API
@@ -21,14 +39,28 @@ export const createSession = async (worldId: string): Promise<SessionData> => {
 };
 
 /**
- * Retrieves session details (for future use)
+ * Lists sessions for the authenticated user (most recently updated first)
  */
-export const getSessionDetails = async (token: string, sessionId: string): Promise<SessionData> => {
-  const response = await authenticatedFetch(`${API_URL}/sessions/${sessionId}`, {
-    method: 'GET',
-  });
-  
-  return handleResponse(response);
+export const listSessions = async (): Promise<SessionSummary[]> => {
+  const result = await apiClient.get<{ sessions: SessionSummary[] }>('/sessions');
+  return result.sessions;
+};
+
+/**
+ * Fetch session details
+ */
+export const getSessionDetails = async (sessionId: string): Promise<{ sessionId: string; worldId: string; createdAt: string; updatedAt: string }> => {
+  return await apiClient.get(`/sessions/${sessionId}`);
+};
+
+/**
+ * Fetch stored messages for a session
+ */
+export const getSessionMessages = async (sessionId: string, limit: number = 200): Promise<StoredSessionMessage[]> => {
+  const result = await apiClient.get<{ messages: StoredSessionMessage[] }>(
+    `/sessions/${sessionId}/messages?limit=${encodeURIComponent(String(limit))}`
+  );
+  return result.messages;
 };
 
 /**

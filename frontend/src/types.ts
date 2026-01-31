@@ -79,7 +79,7 @@ export type BottomTabParamList = {
 export type RootStackParamList = {
   GoogleAuth: undefined;
   MainTabs: undefined;
-  Session: { worldId: string; worldTitle?: string };
+  Session: { worldId: string; worldTitle?: string; sessionId?: string };
   Chapters: { sessionId: string; worldTitle?: string };
   WorldGeneration: { worldId: string };
 };

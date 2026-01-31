@@ -12,6 +12,11 @@ export interface ProcessUserInputOutput {
   shouldTransition: boolean;
 }
 
+export interface GenerateNarratorResponseOutput {
+  narratorOutput: NarratorOutput;
+  narratorResponse: string;
+}
+
 export interface InitializeStoryOutput {
   storyModelData: StoryInitializerOutput;
   chapters: StoryPredictorOutput;
@@ -31,6 +36,10 @@ export class StoryService {
     this.storyNarrator = new StoryNarrator(aiService);
     
     Logger.info('🎮 StoryService initialized');
+  }
+
+  private formatNarratorResponse(narratorOutput: NarratorOutput): string {
+    return `${narratorOutput.response}\n\n1. ${narratorOutput.choices[0]}\n2. ${narratorOutput.choices[1]}\n3. ${narratorOutput.choices[2]}`;
   }
 
   /**
@@ -87,29 +96,22 @@ export class StoryService {
       }
       const currentChapter = allChapters.current;
 
-      const narratorInput: NarratorInput = {
+      const { narratorOutput, narratorResponse } = await this.generateNarratorResponse(
         storyModel,
         currentChapter,
         recentMessages,
         userInput,
         user
-      };
-      const narratorOutput = await this.storyNarrator.generateNarrative(narratorInput);
+      );
 
-      const narratorResponse = `${narratorOutput.response}\n\n1. ${narratorOutput.choices[0]}\n2. ${narratorOutput.choices[1]}\n3. ${narratorOutput.choices[2]}`;
-
-      // FEEDBACK LOOP: Update future chapters based on the latest interaction.
-      const predictorInput: UpdateFutureChaptersInput = {
+      const storyOutput = await this.generateStoryFeedback(
         storyModel,
-        historyChapters: allChapters.history,
-        currentChapter: currentChapter,
-        futureChapters: allChapters.future,
+        allChapters,
         recentMessages,
         userInput,
-        narratorResponse: narratorOutput.response,
+        narratorOutput.response,
         user
-      };
-      const storyOutput = await this.storyPredictor.updateFutureChapters(predictorInput);
+      );
 
       Logger.info(`✅ Generated response and story feedback`);
       return {
@@ -121,5 +123,58 @@ export class StoryService {
       Logger.error(`❌ Failed to process user input: ${error instanceof Error ? error.message : String(error)}`);
       throw new Error('Failed to process user input');
     }
+  }
+
+  /**
+   * Generate the narrator response (fast path). This can be returned to the client immediately.
+   */
+  async generateNarratorResponse(
+    storyModel: StoryModel,
+    currentChapter: Chapter,
+    recentMessages: Message[],
+    userInput: string,
+    user: User
+  ): Promise<GenerateNarratorResponseOutput> {
+    const narratorInput: NarratorInput = {
+      storyModel,
+      currentChapter,
+      recentMessages,
+      userInput,
+      user
+    };
+
+    const narratorOutput = await this.storyNarrator.generateNarrative(narratorInput);
+    const narratorResponse = this.formatNarratorResponse(narratorOutput);
+
+    return { narratorOutput, narratorResponse };
+  }
+
+  /**
+   * Generate story feedback (slow path). Safe to run in the background via ctx.waitUntil.
+   */
+  async generateStoryFeedback(
+    storyModel: StoryModel,
+    allChapters: { history: Chapter[], current: Chapter | null, future: Chapter[] },
+    recentMessages: Message[],
+    userInput: string,
+    narratorResponse: string,
+    user: User
+  ): Promise<StoryPredictorOutput> {
+    if (!allChapters.current) {
+      throw new Error('Current chapter not found');
+    }
+
+    const predictorInput: UpdateFutureChaptersInput = {
+      storyModel,
+      historyChapters: allChapters.history,
+      currentChapter: allChapters.current,
+      futureChapters: allChapters.future,
+      recentMessages,
+      userInput,
+      narratorResponse,
+      user
+    };
+
+    return await this.storyPredictor.updateFutureChapters(predictorInput);
   }
 } 

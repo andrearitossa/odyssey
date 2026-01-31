@@ -4,7 +4,7 @@ import { CompositeScreenProps } from '@react-navigation/native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { BottomTabParamList, RootStackParamList, World } from '../types';
-import { GoogleTokenManager, createWorld, getMyWorlds } from '../api';
+import { GoogleTokenManager, createWorld, getMyWorlds, listSessions, SessionSummary } from '../api';
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<BottomTabParamList, 'Home'>,
@@ -13,6 +13,7 @@ type Props = CompositeScreenProps<
 
 export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const [worlds, setWorlds] = useState<World[]>([]);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
@@ -20,11 +21,20 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const [newWorldTitle, setNewWorldTitle] = useState('');
   const [newWorldDescription, setNewWorldDescription] = useState('');
 
+  const formatDbDate = (value: string): string => {
+    const trimmed = (value || '').trim();
+    if (!trimmed) return 'Unknown';
+    const normalized = trimmed.includes(' ') && !trimmed.includes('T') ? `${trimmed.replace(' ', 'T')}Z` : trimmed;
+    const date = new Date(normalized);
+    if (Number.isNaN(date.getTime())) return 'Unknown';
+    return date.toLocaleDateString();
+  };
+
   useEffect(() => {
-    checkAuthAndLoadWorlds();
+    checkAuthAndLoadData();
   }, []);
 
-  const checkAuthAndLoadWorlds = async () => {
+  const checkAuthAndLoadData = async () => {
     try {
       setLoading(true);
       setError(null);
@@ -41,8 +51,12 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
         return;
       }
 
-      const worldsData = await getMyWorlds(token);
+      const [worldsData, sessionsData] = await Promise.all([
+        getMyWorlds(token),
+        listSessions(),
+      ]);
       setWorlds(worldsData);
+      setSessions(sessionsData);
     } catch (error) {
       console.error('Error loading your worlds:', error);
       if (error instanceof TypeError && error.message === 'Failed to fetch') {
@@ -51,7 +65,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
         navigation.getParent()?.navigate('GoogleAuth');
         return;
       } else {
-        setError('Failed to load your worlds. Please try again.');
+        setError('Failed to load your data. Please try again.');
       }
     } finally {
       setLoading(false);
@@ -60,6 +74,18 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
 
   const selectWorld = (world: World) => {
     navigation.navigate('WorldGeneration', { worldId: world.id });
+  };
+
+  const selectSession = (session: SessionSummary) => {
+    navigation.getParent()?.navigate('Session', {
+      worldId: session.world_id,
+      worldTitle: session.world_title,
+      sessionId: session.session_id,
+    });
+  };
+
+  const handleNewSession = () => {
+    navigation.navigate('Search');
   };
 
   const handleCreateWorld = async () => {
@@ -82,7 +108,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
       setNewWorldDescription('');
       setIsCreateModalVisible(false);
 
-      await checkAuthAndLoadWorlds();
+      await checkAuthAndLoadData();
     } catch (error) {
       console.error('Failed to create world:', error);
       Alert.alert('Error', 'Failed to create world. Please try again.');
@@ -116,7 +142,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
     return (
       <View style={[styles.container, styles.centered]}>
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.actionButton} onPress={checkAuthAndLoadWorlds}>
+        <TouchableOpacity style={styles.actionButton} onPress={checkAuthAndLoadData}>
           <Text style={styles.actionButtonText}>Retry</Text>
         </TouchableOpacity>
       </View>
@@ -125,48 +151,96 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <View style={styles.headerText}>
-            <Text style={styles.title}>Your Worlds</Text>
-            <Text style={styles.subtitle}>Tap one to interact and evolve it</Text>
-          </View>
-          <TouchableOpacity style={styles.addButton} onPress={openCreateModal}>
-            <Text style={styles.addButtonText}>+</Text>
-          </TouchableOpacity>
-        </View>
+      <View style={styles.appHeader}>
+        <Text style={styles.appHeaderText}>-- Odissea --</Text>
       </View>
+      <ScrollView style={styles.mainScroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.mainScrollContent}>
+        {/* Worlds section */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Your Worlds</Text>
+          <Text style={styles.sectionSubtitle}>Tap one to interact and evolve it</Text>
+        </View>
 
-      <ScrollView
-        style={styles.worldsContainer}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {worlds.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>No worlds yet</Text>
-            <Text style={styles.emptySubtitle}>Create your first world to start.</Text>
-          </View>
-        ) : (
-          worlds.map((world) => (
+        <ScrollView
+          horizontal
+          nestedScrollEnabled
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.horizontalListContent}
+        >
+          <TouchableOpacity
+            key="new-world"
+            style={styles.horizontalCard}
+            onPress={openCreateModal}
+            activeOpacity={0.7}
+          >
+            <View style={styles.newCardContent}>
+              <Text style={styles.newCardText}>New World</Text>
+            </View>
+          </TouchableOpacity>
+          {worlds.map((world) => (
             <TouchableOpacity
               key={world.id}
-              style={styles.worldCard}
+              style={styles.horizontalCard}
               onPress={() => selectWorld(world)}
               activeOpacity={0.7}
             >
-              <Text style={styles.worldTitle}>{world.title}</Text>
+              <Text style={styles.worldTitle} numberOfLines={2}>
+                {world.title}
+              </Text>
               {world.description ? (
                 <Text style={styles.worldDescription} numberOfLines={3}>
                   {world.description}
                 </Text>
               ) : null}
               <View style={styles.playButton}>
-                <Text style={styles.playButtonText}>Interact →</Text>
+                <Text style={styles.playButtonText}>Evolve →</Text>
               </View>
             </TouchableOpacity>
-          ))
-        )}
+          ))}
+        </ScrollView>
+
+        {/* Sessions section */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Your Sessions</Text>
+          <Text style={styles.sectionSubtitle}>Continue where you left off</Text>
+        </View>
+
+        <ScrollView
+          horizontal
+          nestedScrollEnabled
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.horizontalListContent}
+        >
+          <TouchableOpacity
+            key="new-session"
+            style={styles.horizontalCard}
+            onPress={handleNewSession}
+            activeOpacity={0.7}
+          >
+            <View style={styles.newCardContent}>
+              <Text style={styles.newCardText}>New Session</Text>
+            </View>
+          </TouchableOpacity>
+          {sessions.map((session) => (
+            <TouchableOpacity
+              key={session.session_id}
+              style={styles.horizontalCard}
+              onPress={() => selectSession(session)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.sessionLabel}>Session</Text>
+              <Text style={styles.worldTitle} numberOfLines={2}>
+                {session.world_title}
+              </Text>
+              <Text style={styles.sessionMeta} numberOfLines={1}>
+                Last active: {formatDbDate(session.updated_at)}
+              </Text>
+              <View style={styles.playButton}>
+                <Text style={styles.playButtonText}>Continue →</Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </ScrollView>
 
       <Modal
@@ -236,58 +310,48 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  header: {
+  appHeader: {
     padding: 16,
-    paddingTop: 20,
-    backgroundColor: 'white',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
   },
-  headerText: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 28,
+  appHeaderText: {
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#1E293B',
   },
-  subtitle: {
-    fontSize: 14,
-    color: '#64748B',
-    marginTop: 4,
-  },
-  addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#8B5CF6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  addButtonText: {
-    color: 'white',
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  worldsContainer: {
+  mainScroll: {
     flex: 1,
   },
-  scrollContent: {
+  mainScrollContent: {
     padding: 16,
+    paddingTop: 14,
+  },
+  sectionHeader: {
+    marginTop: 18,
+    marginBottom: 10,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  sectionSubtitle: {
+    marginTop: 4,
+    fontSize: 13,
+    color: '#64748B',
+  },
+  horizontalListContent: {
+    paddingRight: 16,
     gap: 12,
   },
-  worldCard: {
+  horizontalCard: {
     backgroundColor: 'white',
     borderRadius: 16,
     padding: 16,
+    width: 280,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -316,6 +380,28 @@ const styles = StyleSheet.create({
   playButtonText: {
     color: '#0F172A',
     fontWeight: '600',
+  },
+  newCardContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  newCardText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#8B5CF6',
+  },
+  sessionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#8B5CF6',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+  },
+  sessionMeta: {
+    fontSize: 12,
+    color: '#64748B',
+    marginBottom: 12,
   },
   statusText: {
     marginTop: 10,

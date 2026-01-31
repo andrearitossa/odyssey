@@ -9,7 +9,7 @@ import { useSessionManager } from '../hooks/useSessionManager';
 type Props = NativeStackScreenProps<RootStackParamList, 'Session'>;
 
 export const SessionScreen: React.FC<Props> = ({ route, navigation }) => {
-  const { worldId, worldTitle } = route.params;
+  const { worldId, worldTitle, sessionId } = route.params;
   const { 
     currentSession, 
     messages, 
@@ -30,7 +30,7 @@ export const SessionScreen: React.FC<Props> = ({ route, navigation }) => {
     // Always try to start/resume session for the current world
     // The context will handle checking for existing sessions
     initializeSession();
-  }, [worldId]);
+  }, [worldId, sessionId]);
 
   // Handle thinking animation
   useEffect(() => {
@@ -75,7 +75,7 @@ export const SessionScreen: React.FC<Props> = ({ route, navigation }) => {
     try {
       // startSession now handles checking for existing sessions automatically
       // It will resume if one exists, or create new if needed
-      await startSession(worldId);
+      await startSession(worldId, sessionId);
     } catch (error) {
       console.error('Failed to initialize session:', error);
     }

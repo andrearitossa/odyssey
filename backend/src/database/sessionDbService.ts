@@ -33,4 +33,11 @@ export class SessionDbService {
       .bind(sessionId, userId)
       .first<Session>();
   }
+
+  async touchSession(sessionId: string): Promise<void> {
+    await this.db
+      .prepare('UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .bind(sessionId)
+      .run();
+  }
 }
