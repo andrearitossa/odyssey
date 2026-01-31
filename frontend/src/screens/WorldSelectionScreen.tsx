@@ -1,10 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Modal, TextInput, Alert } from 'react-native';
 import { CompositeScreenProps } from '@react-navigation/native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { BottomTabParamList, RootStackParamList, World } from '../types';
 import { GoogleTokenManager, getAllWorlds, createWorld } from '../api';
+
+const buildQueryMatchers = (query: string): RegExp[] => {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const terms = trimmed.split(/\s+/).filter(Boolean);
+
+  return terms.map((term) => {
+    const escaped = term.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    const withWildcards = escaped.replace(/\*/g, '.*').replace(/\?/g, '.');
+    return new RegExp(withWildcards, 'i');
+  });
+};
+
+const matchesAll = (matchers: RegExp[], value: string | null | undefined): boolean => {
+  if (matchers.length === 0) return true;
+  if (!value) return false;
+  return matchers.every((re) => re.test(value));
+};
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<BottomTabParamList, 'Search'>,
@@ -20,9 +39,19 @@ export const WorldSelectionScreen: React.FC<Props> = ({ navigation }) => {
   const [newWorldTitle, setNewWorldTitle] = useState('');
   const [newWorldDescription, setNewWorldDescription] = useState('');
 
+  const [isSearchActive, setIsSearchActive] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<TextInput>(null);
+
   useEffect(() => {
     checkAuthAndLoadWorlds();
   }, []);
+
+  useEffect(() => {
+    if (!isSearchActive) return;
+    const handle = setTimeout(() => searchInputRef.current?.focus(), 50);
+    return () => clearTimeout(handle);
+  }, [isSearchActive]);
 
   const checkAuthAndLoadWorlds = async () => {
     try {
@@ -78,6 +107,36 @@ export const WorldSelectionScreen: React.FC<Props> = ({ navigation }) => {
       worldTitle: world.title,
     });
   };
+
+  const openSearch = () => {
+    setIsSearchActive(true);
+  };
+
+  const closeSearch = () => {
+    setIsSearchActive(false);
+    setSearchQuery('');
+  };
+
+  const filteredWorlds = useMemo(() => {
+    const matchers = buildQueryMatchers(searchQuery);
+    if (matchers.length === 0) return worlds;
+
+    const titleMatches: World[] = [];
+    const descriptionMatches: World[] = [];
+
+    for (const world of worlds) {
+      if (matchesAll(matchers, world.title)) {
+        titleMatches.push(world);
+        continue;
+      }
+
+      if (matchesAll(matchers, world.description)) {
+        descriptionMatches.push(world);
+      }
+    }
+
+    return [...titleMatches, ...descriptionMatches];
+  }, [worlds, searchQuery]);
 
   const handleCreateWorld = async () => {
     if (!newWorldTitle.trim()) {
@@ -150,12 +209,47 @@ export const WorldSelectionScreen: React.FC<Props> = ({ navigation }) => {
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={styles.headerText}>
-            <Text style={styles.title}>Choose Your Adventure</Text>
-            <Text style={styles.subtitle}>Select a world to begin your story</Text>
+            {isSearchActive ? (
+              <View style={styles.searchBarContainer}>
+                <TextInput
+                  ref={searchInputRef}
+                  style={styles.searchInput}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder="Search worlds (use * and ? wildcards)"
+                  placeholderTextColor="#94A3B8"
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  returnKeyType="search"
+                />
+                {searchQuery.length > 0 ? (
+                  <TouchableOpacity
+                    onPress={() => setSearchQuery('')}
+                    style={styles.searchClearButton}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear search"
+                  >
+                    <Text style={styles.searchClearText}>×</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            ) : (
+              <>
+                <Text style={styles.title}>Choose Your Adventure</Text>
+                <Text style={styles.subtitle}>Select a world to begin your story</Text>
+              </>
+            )}
           </View>
-          <TouchableOpacity style={styles.addButton} onPress={openCreateModal}>
-            <Text style={styles.addButtonText}>+</Text>
-          </TouchableOpacity>
+
+          {isSearchActive ? (
+            <TouchableOpacity style={styles.searchButton} onPress={closeSearch}>
+              <Text style={styles.searchButtonText}>✕</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.searchButton} onPress={openSearch}>
+              <Text style={styles.searchButtonText}>Search</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -164,7 +258,25 @@ export const WorldSelectionScreen: React.FC<Props> = ({ navigation }) => {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {worlds.map((world) => (
+        {!isSearchActive ? (
+          <TouchableOpacity
+            style={[styles.worldCard, styles.createCard]}
+            onPress={openCreateModal}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.createCardTitle}>Create a new world</Text>
+            <Text style={styles.createCardSubtitle}>Start fresh with a new setting</Text>
+          </TouchableOpacity>
+        ) : null}
+
+        {filteredWorlds.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateTitle}>No matches found</Text>
+            <Text style={styles.emptyStateSubtitle}>Try a different search pattern.</Text>
+          </View>
+        ) : null}
+
+        {filteredWorlds.map((world) => (
           <TouchableOpacity
             key={world.id}
             style={styles.worldCard}
@@ -355,6 +467,84 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: '600',
     fontSize: 14,
+  },
+  searchButton: {
+    backgroundColor: '#8B5CF6',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    minWidth: 64,
+    alignItems: 'center',
+  },
+  searchButtonText: {
+    color: 'white',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  searchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#1E293B',
+  },
+  searchClearButton: {
+    marginLeft: 10,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchClearText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#64748B',
+    lineHeight: 18,
+  },
+  createCard: {
+    borderStyle: 'dashed',
+    borderWidth: 2,
+    borderColor: '#C4B5FD',
+    backgroundColor: '#F5F3FF',
+  },
+  createCardTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#5B21B6',
+    marginBottom: 6,
+  },
+  createCardSubtitle: {
+    fontSize: 14,
+    color: '#6D28D9',
+  },
+  emptyState: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+  },
+  emptyStateTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 6,
+  },
+  emptyStateSubtitle: {
+    fontSize: 14,
+    color: '#64748B',
   },
   modalContainer: {
     flex: 1,
