@@ -6,6 +6,7 @@ import { RootStackParamList } from '../types';
 import { CrossPlatformOAuthService } from '../services/CrossPlatformOAuthService';
 import { ErrorHandlingService, ErrorDisplayInfo } from '../services/ErrorHandlingService';
 import { useAuth } from '../contexts/AuthContext';
+import { theme } from '../ui';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GoogleAuth'>;
 
@@ -93,7 +94,7 @@ export const GoogleAuthScreen: React.FC<Props> = ({ navigation }) => {
   if (isAuthLoading) {
     return (
       <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color="#8B5CF6" />
+        <ActivityIndicator size="large" color={theme.colors.gold} />
         <Text style={styles.loadingText}>Checking authentication...</Text>
       </View>
     );
@@ -105,17 +106,17 @@ export const GoogleAuthScreen: React.FC<Props> = ({ navigation }) => {
       <View style={styles.container}>
         <View style={styles.content}>
           <View style={styles.logoContainer}>
-            <Image 
+            {/* <Image 
               source={require('../../assets/icon.png')} 
               style={styles.logo}
               resizeMode="contain"
-            />
+            /> */}
             <Text style={styles.title}>Odyssey</Text>
             <Text style={styles.subtitle}>AI-Powered Storytelling</Text>
           </View>
 
           <View style={styles.authContainer}>
-            <ActivityIndicator size="large" color="#8B5CF6" />
+            <ActivityIndicator size="large" color={theme.colors.gold} />
             <Text style={styles.authText}>Authenticating...</Text>
             <Text style={styles.authSubtext}>
               Complete the sign-in in your browser. We'll bring you back automatically!
@@ -139,11 +140,11 @@ export const GoogleAuthScreen: React.FC<Props> = ({ navigation }) => {
       <View style={styles.container}>
         <View style={styles.content}>
           <View style={styles.logoContainer}>
-            <Image 
+            {/* <Image 
               source={require('../../assets/icon.png')} 
               style={styles.logo}
               resizeMode="contain"
-            />
+            /> */}
             <Text style={styles.title}>Odyssey</Text>
             <Text style={styles.subtitle}>AI-Powered Storytelling</Text>
           </View>
@@ -231,7 +232,7 @@ export const GoogleAuthScreen: React.FC<Props> = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1E1B4B',
+    backgroundColor: theme.colors.wineDark,
   },
   centered: {
     justifyContent: 'center',
@@ -253,13 +254,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: 'white',
+    color: theme.colors.textOnWine,
     textAlign: 'center',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#C7D2FE',
+    color: theme.colors.goldSoft,
     textAlign: 'center',
   },
   descriptionContainer: {
@@ -273,8 +274,8 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   pocBadge: {
-    backgroundColor: 'rgba(139, 92, 246, 0.2)',
-    borderColor: '#8B5CF6',
+    backgroundColor: 'rgba(212, 175, 55, 0.12)',
+    borderColor: theme.colors.gold,
     borderWidth: 1,
     borderRadius: 20,
     paddingHorizontal: 16,
@@ -285,7 +286,7 @@ const styles = StyleSheet.create({
   pocBadgeText: {
     fontSize: 12,
     fontWeight: 'bold',
-    color: '#8B5CF6',
+    color: theme.colors.gold,
     letterSpacing: 1,
   },
   authContainer: {
@@ -293,20 +294,18 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   googleButton: {
-    backgroundColor: '#4285F4',
+    backgroundColor: theme.colors.wine,
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.goldSoft,
+    ...theme.shadow,
     marginBottom: 16,
     minWidth: 250,
   },
   googleButtonText: {
-    color: 'white',
+    color: theme.colors.textOnWine,
     fontSize: 18,
     fontWeight: '600',
     textAlign: 'center',
@@ -320,14 +319,14 @@ const styles = StyleSheet.create({
   },
   authText: {
     fontSize: 18,
-    color: 'white',
+    color: theme.colors.textOnWine,
     textAlign: 'center',
     marginTop: 16,
     marginBottom: 8,
   },
   authSubtext: {
     fontSize: 14,
-    color: '#94A3B8',
+    color: theme.colors.goldSoft,
     textAlign: 'center',
     lineHeight: 20,
     paddingHorizontal: 16,
@@ -338,26 +337,24 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 18,
-    color: '#EF4444',
+    color: theme.colors.danger,
     fontWeight: '600',
     marginBottom: 8,
   },
   errorDescription: {
     fontSize: 14,
-    color: '#FCA5A5',
+    color: theme.colors.goldSoft,
     textAlign: 'center',
     lineHeight: 20,
   },
   primaryButton: {
-    backgroundColor: '#8B5CF6',
+    backgroundColor: theme.colors.wine,
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.goldSoft,
+    ...theme.shadow,
     minWidth: 200,
     alignSelf: 'center',
   },
@@ -379,7 +376,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: '#94A3B8',
+    color: theme.colors.goldSoft,
     marginTop: 16,
     textAlign: 'center',
   },
@@ -404,7 +401,7 @@ const styles = StyleSheet.create({
   secondaryButton: {
     backgroundColor: 'transparent',
     borderWidth: 2,
-    borderColor: '#8B5CF6',
+    borderColor: theme.colors.gold,
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 12,
@@ -412,7 +409,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   secondaryButtonText: {
-    color: '#8B5CF6',
+    color: theme.colors.gold,
     fontSize: 16,
     fontWeight: '600',
     textAlign: 'center',

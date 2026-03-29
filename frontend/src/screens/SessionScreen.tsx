@@ -5,11 +5,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import { RootStackParamList } from '../types';
 import { useSessionManager } from '../hooks/useSessionManager';
+import { AppHeader, Button, Screen, theme } from '../ui';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Session'>;
 
 export const SessionScreen: React.FC<Props> = ({ route, navigation }) => {
-  const { worldId, worldTitle } = route.params;
+  const { worldId, worldTitle, sessionId } = route.params;
   const { 
     currentSession, 
     messages, 
@@ -30,7 +31,7 @@ export const SessionScreen: React.FC<Props> = ({ route, navigation }) => {
     // Always try to start/resume session for the current world
     // The context will handle checking for existing sessions
     initializeSession();
-  }, [worldId]);
+  }, [worldId, sessionId]);
 
   // Handle thinking animation
   useEffect(() => {
@@ -75,7 +76,7 @@ export const SessionScreen: React.FC<Props> = ({ route, navigation }) => {
     try {
       // startSession now handles checking for existing sessions automatically
       // It will resume if one exists, or create new if needed
-      await startSession(worldId);
+      await startSession(worldId, sessionId);
     } catch (error) {
       console.error('Failed to initialize session:', error);
     }
@@ -130,7 +131,7 @@ export const SessionScreen: React.FC<Props> = ({ route, navigation }) => {
         if (currentSession) {
           navigation.navigate('Chapters', { 
             sessionId: currentSession.sessionId, 
-            worldTitle: worldTitle 
+            worldTitle: worldTitle ?? 'Adventure',
           });
         }
       }
@@ -140,73 +141,69 @@ export const SessionScreen: React.FC<Props> = ({ route, navigation }) => {
   // Loading state
   if (isSessionLoading) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <Image 
-          source={require('../../assets/odissea_load.gif')} 
-          style={styles.loadingGif}
-          resizeMode="contain"
-        />
-        <Text style={styles.loadingText}>Loading your adventure...</Text>
-      </View>
+      <Screen>
+        <View style={styles.centered}>
+          <Image 
+            source={require('../../assets/odissea_load.gif')} 
+            style={styles.loadingGif}
+            resizeMode="contain"
+          />
+          <Text style={styles.loadingText}>Loading your adventure...</Text>
+        </View>
+      </Screen>
     );
   }
 
   // Error state - session failed to load (only show if not loading and no session)
   if (!isSessionLoading && !currentSession) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <Text style={styles.errorText}>Failed to start adventure</Text>
-        <TouchableOpacity 
-          style={styles.actionButton} 
-          onPress={() => navigation.goBack()}
-        >
-          <Text style={styles.actionButtonText}>← Back to Worlds</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.actionButton, styles.secondaryButton]} 
-          onPress={initializeSession}
-        >
-          <Text style={styles.actionButtonText}>Try Again</Text>
-        </TouchableOpacity>
-      </View>
+      <Screen>
+        <View style={styles.centered}>
+          <Text style={styles.errorText}>Failed to start adventure</Text>
+          <View style={styles.errorActions}>
+            <Button label="← Back to Worlds" onPress={() => navigation.goBack()} />
+            <Button label="Try Again" onPress={initializeSession} variant="secondary" />
+          </View>
+        </View>
+      </Screen>
     );
   }
 
-  return (
-    <PanGestureHandler onGestureEvent={handleSwipeGesture} onHandlerStateChange={handleSwipeGesture}>
-      <View style={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.backButton} 
-            onPress={() => navigation.goBack()}
-          >
-            <Ionicons name="chevron-back" size={24} color="#8B5CF6" />
-            <Text style={styles.backButtonText}>Worlds</Text>
-          </TouchableOpacity>
-          <Text style={styles.worldTitle} numberOfLines={1}>
-            {worldTitle}
-          </Text>
-          <View style={styles.headerActions}>
-            <TouchableOpacity 
-              style={styles.chaptersButton} 
-              onPress={() => currentSession && navigation.navigate('Chapters', { 
-                sessionId: currentSession.sessionId, 
-                worldTitle: worldTitle 
-              })}
-              disabled={!currentSession}
-            >
-              <Ionicons name="book-outline" size={16} color="white" />
+  const content = (
+    <Screen style={styles.container}>
+        <AppHeader
+          title={worldTitle ?? 'Adventure'}
+          left={
+            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+              <Ionicons name="chevron-back" size={24} color={theme.colors.wine} />
+              <Text style={styles.backButtonText}>Worlds</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.resetButton} 
-              onPress={handleResetWorld}
-              disabled={isInteracting}
-            >
-              <Ionicons name="refresh" size={16} color="white" />
-            </TouchableOpacity>
-          </View>
-        </View>
+          }
+          right={
+            <View style={styles.headerActions}>
+              <TouchableOpacity
+                style={[styles.chaptersButton, !currentSession && styles.iconButtonDisabled]}
+                onPress={() =>
+                  currentSession &&
+                  navigation.navigate('Chapters', {
+                    sessionId: currentSession.sessionId,
+                    worldTitle: worldTitle ?? 'Adventure',
+                  })
+                }
+                disabled={!currentSession}
+              >
+                <Ionicons name="book-outline" size={16} color={theme.colors.textOnWine} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.resetButton, isInteracting && styles.iconButtonDisabled]}
+                onPress={handleResetWorld}
+                disabled={isInteracting}
+              >
+                <Ionicons name="refresh" size={16} color={theme.colors.textOnWine} />
+              </TouchableOpacity>
+            </View>
+          }
+        />
 
         <KeyboardAvoidingView 
           style={styles.content} 
@@ -306,7 +303,7 @@ export const SessionScreen: React.FC<Props> = ({ route, navigation }) => {
               <View style={styles.chatInputContainer}>
                 <View style={styles.chatInputContent}>
                   <View style={styles.chatIconContainer}>
-                    <Ionicons name="create-outline" size={20} color="#8B5CF6" />
+                    <Ionicons name="create-outline" size={20} color={theme.colors.goldDark} />
                   </View>
                   <View style={styles.chatInputWrapper}>
                     <TextInput
@@ -336,7 +333,7 @@ export const SessionScreen: React.FC<Props> = ({ route, navigation }) => {
                       <Ionicons 
                         name="send" 
                         size={18} 
-                        color={(!inputText.trim() || isInteracting) ? '#9CA3AF' : 'white'} 
+                        color={(!inputText.trim() || isInteracting) ? theme.colors.textMuted : theme.colors.textOnWine} 
                       />
                     </TouchableOpacity>
                   </View>
@@ -345,7 +342,15 @@ export const SessionScreen: React.FC<Props> = ({ route, navigation }) => {
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
-      </View>
+    </Screen>
+  );
+
+  // Workaround: RNGH web delegate can crash on unmount for PanGestureHandler.
+  if (Platform.OS === 'web') return content;
+
+  return (
+    <PanGestureHandler onGestureEvent={handleSwipeGesture} onHandlerStateChange={handleSwipeGesture}>
+      {content}
     </PanGestureHandler>
   );
 };
@@ -353,7 +358,7 @@ export const SessionScreen: React.FC<Props> = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: theme.colors.background,
   },
   content: {
     flex: 1,
@@ -363,18 +368,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
+  errorActions: {
+    width: '100%',
+    maxWidth: 360,
+    gap: 12,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
     paddingTop: 20,
-    backgroundColor: 'white',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
     zIndex: 1,
   },
   backButton: {
@@ -385,14 +392,14 @@ const styles = StyleSheet.create({
   },
   backButtonText: {
     fontSize: 16,
-    color: '#8B5CF6',
+    color: theme.colors.wine,
     marginLeft: 4,
     fontWeight: '500',
   },
   worldTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#1E293B',
+    color: theme.colors.text,
     flex: 1,
     textAlign: 'center',
   },
@@ -402,7 +409,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   chaptersButton: {
-    backgroundColor: '#8B5CF6',
+    backgroundColor: theme.colors.wine,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
@@ -411,13 +418,16 @@ const styles = StyleSheet.create({
     minWidth: 40,
   },
   resetButton: {
-    backgroundColor: '#EF4444',
+    backgroundColor: theme.colors.danger,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
     minWidth: 40,
+  },
+  iconButtonDisabled: {
+    opacity: 0.55,
   },
   messagesContainer: {
     flex: 1,
@@ -434,22 +444,18 @@ const styles = StyleSheet.create({
   },
   userMessage: {
     alignSelf: 'flex-end',
-    backgroundColor: '#8B5CF6',
+    backgroundColor: theme.colors.wine,
     maxWidth: '80%',
   },
   narratorMessage: {
     alignSelf: 'stretch',
-    backgroundColor: '#FEFEFE',
+    backgroundColor: theme.colors.surface,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.border,
     marginHorizontal: 0,
     padding: 20,
     borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
+    ...theme.shadow,
   },
   messageText: {
     fontSize: 16,
@@ -459,19 +465,19 @@ const styles = StyleSheet.create({
     color: 'white',
   },
   narratorMessageText: {
-    color: '#1E293B',
+    color: theme.colors.text,
     fontSize: 17,
     lineHeight: 26,
     letterSpacing: 0.3,
   },
   messageTime: {
     fontSize: 12,
-    color: '#64748B',
+    color: theme.colors.textMuted,
     textAlign: 'right',
   },
   thinkingMessage: {
-    backgroundColor: '#F8FAFC',
-    borderColor: '#E2E8F0',
+    backgroundColor: theme.colors.surfaceAlt,
+    borderColor: theme.colors.border,
   },
   thinkingContainer: {
     flexDirection: 'row',
@@ -486,18 +492,18 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#8B5CF6',
+    backgroundColor: theme.colors.goldDark,
     marginHorizontal: 2,
   },
   thinkingText: {
     fontSize: 14,
-    color: '#64748B',
+    color: theme.colors.textMuted,
     fontStyle: 'italic',
   },
   optionsContainer: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: theme.colors.background,
     borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
+    borderTopColor: theme.colors.border,
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: Platform.OS === 'ios' ? 20 : 16,
@@ -506,16 +512,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   chatInputContainer: {
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     borderRadius: 16,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderColor: theme.colors.border,
+    ...theme.shadow,
   },
   chatInputContent: {
     flexDirection: 'row',
@@ -523,7 +525,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   chatIconContainer: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 20,
     width: 36,
     height: 36,
@@ -540,21 +542,21 @@ const styles = StyleSheet.create({
   chatInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: theme.colors.border,
     borderRadius: 12,
     padding: 12,
     fontSize: 16,
     maxHeight: 120,
     minHeight: 44,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: theme.colors.surfaceAlt,
     textAlignVertical: 'top',
   },
   chatInputDisabled: {
-    backgroundColor: '#F3F4F6',
-    color: '#9CA3AF',
+    backgroundColor: theme.colors.border,
+    color: theme.colors.textMuted,
   },
   chatSendButton: {
-    backgroundColor: '#8B5CF6',
+    backgroundColor: theme.colors.wine,
     paddingHorizontal: 14,
     paddingVertical: 14,
     borderRadius: 12,
@@ -564,11 +566,11 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   chatSendButtonDisabled: {
-    backgroundColor: '#D1D5DB',
+    backgroundColor: theme.colors.border,
   },
   statusText: {
     fontSize: 16,
-    color: '#64748B',
+    color: theme.colors.textMuted,
     textAlign: 'center',
   },
   loadingGif: {
@@ -578,18 +580,18 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: '#64748B',
+    color: theme.colors.textMuted,
     textAlign: 'center',
   },
   errorText: {
-    color: '#EF4444',
+    color: theme.colors.danger,
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 20,
     textAlign: 'center',
   },
   actionButton: {
-    backgroundColor: '#8B5CF6',
+    backgroundColor: theme.colors.wine,
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 8,
@@ -605,18 +607,14 @@ const styles = StyleSheet.create({
   },
   choiceMessage: {
     alignSelf: 'stretch',
-    backgroundColor: '#F0F9FF',
+    backgroundColor: theme.colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: '#BAE6FD',
+    borderColor: theme.colors.goldSoft,
     marginHorizontal: 0,
     padding: 0,
     borderRadius: 12,
     marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    ...theme.shadow,
   },
   choiceContent: {
     flexDirection: 'row',
@@ -627,7 +625,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   choiceNumberContainer: {
-    backgroundColor: '#0369A1',
+    backgroundColor: theme.colors.wineDark,
     borderRadius: 20,
     width: 32,
     height: 32,
@@ -648,13 +646,13 @@ const styles = StyleSheet.create({
   },
   choiceText: {
     fontSize: 16,
-    color: '#0F172A',
+    color: theme.colors.text,
     fontWeight: '500',
     flex: 1,
     lineHeight: 22,
   },
   choiceTextDisabled: {
-    color: '#9CA3AF',
+    color: theme.colors.textMuted,
   },
   firstChoice: {
     marginTop: 8,

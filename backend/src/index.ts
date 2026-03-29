@@ -16,6 +16,7 @@
 
 import { ApiRouter } from './routes';
 import { Logger } from './utils/logger';
+import { corsHeaders, createJsonResponse } from './utils/response';
 
 import { Env } from './routes';
 
@@ -41,7 +42,15 @@ function getCachedRouter(env: Env): ApiRouter {
 	}
 
 	// Create a cache key based on environment variables that matter
-	const currentCacheKey = `${env.GEMINI_API_KEY || ''}_${env.HUGGINGFACE_API_KEY || ''}_${env.OPENAI_API_KEY || ''}`;
+	const currentCacheKey = [
+		env.GEMINI_API_KEY || '',
+		env.HUGGINGFACE_API_KEY || '',
+		env.OPENAI_API_KEY || '',
+		env.CLOUDFLARE_API_TOKEN || '',
+		env.CLOUDFLARE_ACCOUNT_ID || '',
+		env.GOOGLE_CLIENT_ID || '',
+		env.GOOGLE_CLIENT_SECRET || ''
+	].join('_');
 	
 	// Return cached router if env hasn't changed
 	if (cachedRouter && cacheKey === currentCacheKey) {
@@ -78,10 +87,8 @@ export default {
 			return new Response(null, {
 				status: 200,
 				headers: {
-					'Access-Control-Allow-Origin': '*',
-					'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-					'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-					'Access-Control-Max-Age': '86400', // 24 hours
+					...corsHeaders,
+					'X-Request-ID': requestId,
 				},
 			});
 		}
@@ -95,7 +102,7 @@ export default {
 
 		try {
 			// Route the request
-			const response = await router.route(request, ctx);
+			const response = await router.route(request, env, ctx);
 			
 			// Log response
 			const duration = Date.now() - requestTimer;
@@ -121,17 +128,17 @@ export default {
 				}
 			});
 			
-			// Ensure all responses have CORS headers
+			// Ensure all responses have CORS headers + request id
 			const headers = new Headers(response.headers);
-			headers.set('Access-Control-Allow-Origin', '*');
-			headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-			headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-			headers.set('X-Request-ID', requestId); // Add request ID for tracking
-			
+			for (const [key, value] of Object.entries(corsHeaders)) {
+				headers.set(key, value);
+			}
+			headers.set('X-Request-ID', requestId);
+
 			return new Response(response.body, {
 				status: response.status,
 				statusText: response.statusText,
-				headers: headers,
+				headers,
 			});
 			
 		} catch (error) {
@@ -150,24 +157,15 @@ export default {
 				}
 			});
 			
-			// Return a generic error response with CORS headers
-			return new Response(
-				JSON.stringify({
+			return createJsonResponse(
+				{
 					error: 'Internal Server Error',
 					message: 'An unexpected error occurred',
 					status: 500,
-					requestId: requestId
-				}),
-				{
-					status: 500,
-					headers: {
-						'Content-Type': 'application/json',
-						'Access-Control-Allow-Origin': '*',
-						'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-						'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-						'X-Request-ID': requestId,
-					},
-				}
+					requestId
+				},
+				500,
+				{ 'X-Request-ID': requestId }
 			);
 		}
 	},

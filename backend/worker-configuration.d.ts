@@ -3606,7 +3606,7 @@ interface AiModels {
     "@cf/runwayml/stable-diffusion-v1-5-img2img": BaseAiTextToImage;
     "@cf/lykon/dreamshaper-8-lcm": BaseAiTextToImage;
     "@cf/bytedance/stable-diffusion-xl-lightning": BaseAiTextToImage;
-    "@cf/myshell-ai/melotts": BaseAiTextToSpeech;
+    "@cf/deepgram/aura-1": BaseAiTextToSpeech;
     "@cf/baai/bge-base-en-v1.5": BaseAiTextEmbeddings;
     "@cf/baai/bge-small-en-v1.5": BaseAiTextEmbeddings;
     "@cf/baai/bge-large-en-v1.5": BaseAiTextEmbeddings;

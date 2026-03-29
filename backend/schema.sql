@@ -44,8 +44,12 @@ CREATE TABLE IF NOT EXISTS migrations (
 -- World definitions
 CREATE TABLE IF NOT EXISTS worlds (
   id TEXT PRIMARY KEY,
+  creator_id INTEGER,
   title TEXT NOT NULL,
-  description TEXT
+  description TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (creator_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
 -- Active user sessions
@@ -104,6 +108,7 @@ CREATE TABLE IF NOT EXISTS chapters (
 -- Essential indexes for performance
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_world_id ON sessions(world_id);
+CREATE INDEX IF NOT EXISTS idx_worlds_creator_id ON worlds(creator_id);
 CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_messages_chapter_number ON messages(session_id, chapter_number);
 CREATE INDEX IF NOT EXISTS idx_story_models_session_id ON story_models(session_id);

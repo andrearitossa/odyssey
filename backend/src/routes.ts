@@ -1,16 +1,17 @@
 
 
 import { createErrorResponse } from './utils/response';
-import { logRequest } from './utils/requestLogger';
 import { Logger } from './utils/logger';
-import { handleAuthError } from './utils/errorHandling';
 
 // === ENVIRONMENT BINDINGS ===
 export interface Env {
   DB: D1Database;
+  // AI services
   HUGGINGFACE_API_KEY?: string;
   OPENAI_API_KEY?: string;
   GEMINI_API_KEY?: string;
+  CLOUDFLARE_API_TOKEN?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
   // Google OAuth configuration
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
@@ -40,24 +41,31 @@ export class ApiRouter {
   private worldGenerationRouter: WorldGenerationRouter;
   private profileRouter: ProfileRouter;
   private healthRouter: HealthRouter;
-  private authService: AuthService; // Add authService as a member
+  private authService: AuthService;
 
   constructor(env: Env) {
     // Initialize core services once
     const oAuthService = new OAuthService(env.DB);
     const userDbService = new UserDbService(env.DB);
-    this.authService = new AuthService(oAuthService, userDbService); // Assign to member
+    this.authService = new AuthService(oAuthService, userDbService);
 
-    this.googleAuthRouter = new GoogleAuthRouter(env, oAuthService, userDbService, this.authService);
-    this.storyInteractionRouter = new StoryInteractionRouter(env, this.authService, userDbService);
-    this.worldsRouter = new WorldsRouter(env, this.authService, userDbService);
-    this.worldGenerationRouter = new WorldGenerationRouter(this.authService);
-    this.profileRouter = new ProfileRouter(this.authService, userDbService); // ProfileRouter no longer needs env directly
-    this.healthRouter = new HealthRouter(); // HealthRouter doesn't need services
+    this.googleAuthRouter = new GoogleAuthRouter(env, oAuthService, userDbService);
+    this.storyInteractionRouter = new StoryInteractionRouter(env);
+    this.worldsRouter = new WorldsRouter(env);
+    this.worldGenerationRouter = new WorldGenerationRouter(env);
+    this.profileRouter = new ProfileRouter(userDbService);
+    this.healthRouter = new HealthRouter();
   }
 
-  // New helper method for authenticated routes
-  private async handleAuthenticatedRoute(request: Request, ctx: ExecutionContext | undefined, handler: (request: Request, user: User, ctx?: ExecutionContext) => Promise<Response>): Promise<Response> {
+  private notFound(): Response {
+    return createErrorResponse('Route not found', 404, 'Not Found');
+  }
+
+  private async handleAuthenticatedRoute(
+    request: Request,
+    ctx: ExecutionContext,
+    handler: (request: Request, user: User, ctx: ExecutionContext) => Promise<Response>
+  ): Promise<Response> {
     const authContext = { component: 'ApiRouter', operation: 'AUTHENTICATE_ROUTE' };
     const authResult = await this.authService.authenticateAndAuthorize(request, authContext);
 
@@ -68,75 +76,52 @@ export class ApiRouter {
     return handler(request, user, ctx);
   }
 
-  async route(request: Request, ctx?: ExecutionContext): Promise<Response> {
-    logRequest(request);
-
+  async route(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     try {
       const url = new URL(request.url);
       const pathname = url.pathname;
-      const method = request.method;
 
       // Health check (no auth required)
       if (pathname === '/health') {
-        const healthResponse = await this.healthRouter.route(request, ctx);
-        if (healthResponse === null) {
-          return createErrorResponse('Route not found', 404, 'Not Found');
-        }
-        return healthResponse;
+        return (await this.healthRouter.route(request, ctx)) ?? this.notFound();
       }
 
       // Google OAuth routes (handled by GoogleAuthRouter, which manages its own auth flow)
       if (pathname.startsWith('/auth/google') || pathname.startsWith('/auth/validate-google') || pathname.startsWith('/auth/logout') || pathname.startsWith('/auth/welcome')) {
-        const googleResponse = await this.googleAuthRouter.route(request, ctx);
-        if (googleResponse === null) {
-          return createErrorResponse('Route not found', 404, 'Not Found');
-        }
-        return googleResponse;
+        return (await this.googleAuthRouter.route(request, ctx)) ?? this.notFound();
       }
 
       // Authenticated routes
       if (pathname.startsWith('/profile')) {
-        return await this.handleAuthenticatedRoute(request, ctx, async (req, user, context) => {
-          const profileResponse = await this.profileRouter.route(req, user, context);
-          if (profileResponse === null) {
-            return createErrorResponse('Route not found', 404, 'Not Found');
-          }
-          return profileResponse;
+        return this.handleAuthenticatedRoute(request, ctx, async (req, user, context) => {
+          const result = await this.profileRouter.route(req, user, context);
+          return result ?? this.notFound();
         });
       }
 
       if (pathname.startsWith('/worlds')) {
-        return await this.handleAuthenticatedRoute(request, ctx, async (req, user, context) => {
-          const worldsResponse = await this.worldsRouter.route(req, user, context);
-          if (worldsResponse === null) {
-            return createErrorResponse('Route not found', 404, 'Not Found');
-          }
-          return worldsResponse;
+        return this.handleAuthenticatedRoute(request, ctx, async (req, user, context) => {
+          const result = await this.worldsRouter.route(req, user, context);
+          return result ?? this.notFound();
         });
       }
 
       if (pathname.startsWith('/world-generation')) {
-        return await this.handleAuthenticatedRoute(request, ctx, async (req, user, context) => {
-          const worldGenerationResponse = await this.worldGenerationRouter.route(req, user, context);
-          if (worldGenerationResponse === null) {
-            return createErrorResponse('Route not found', 404, 'Not Found');
-          }
-          return worldGenerationResponse;
+        return this.handleAuthenticatedRoute(request, ctx, async (req, user, context) => {
+          const result = await this.worldGenerationRouter.route(req, user, context);
+          return result ?? this.notFound();
         });
       }
 
       if (pathname.startsWith('/sessions')) {
-        return await this.handleAuthenticatedRoute(request, ctx, async (req, user, context) => {
-          const storyResponse = await this.storyInteractionRouter.route(req, user, context);
-          if (storyResponse === null) {
-            return createErrorResponse('Route not found', 404, 'Not Found');
-          }
-          return storyResponse;
+        return this.handleAuthenticatedRoute(request, ctx, async (req, user, context) => {
+          const result = await this.storyInteractionRouter.route(req, user, context);
+          return result ?? this.notFound();
         });
       }
 
       // If no router handled the request
-      return createErrorResponse('Route not found', 404, 'Not Found');
+      return this.notFound();
 
     } catch (error) {
       Logger.error('Route handler error', error, {

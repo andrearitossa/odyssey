@@ -106,18 +106,26 @@ export class Logger {
     return logData;
   }
 
-  static info(message: string, context?: LogContext): void {
+  static info(message: string, ...args: any[]): void {
     if (!this.shouldLog(LogLevel.INFO)) return;
-    
+    // If the second argument is a LogContext, preserve old behavior
+    let context: LogContext | undefined = undefined;
+    if (args.length === 1 && typeof args[0] === 'object' && !(args[0] instanceof Array)) {
+      context = args[0];
+    }
     const formatted = this.formatMessage('INFO', message, context);
     const structured = this.structuredLog('INFO', message, context);
-    
-    // Use console.log for INFO level - this appears in wrangler logs
     console.log(formatted);
-    
-    // Also log structured data for better parsing in Cloudflare dashboard
     if (context) {
       console.log('[STRUCTURED]', JSON.stringify(structured));
+    }
+    // If there are additional args, log them as JSON for inspection
+    if (args.length > 0) {
+      args.forEach((arg) => {
+        if (arg && typeof arg === 'object') {
+          console.log('[INFO_OBJECT]', JSON.stringify(arg, null, 2));
+        }
+      });
     }
   }
 

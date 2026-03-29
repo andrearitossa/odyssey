@@ -1,31 +1,28 @@
 import { createJsonResponse, createErrorResponse, parseJsonBody, corsHeaders } from '../utils/response';
 import { validateRequiredFields, generateSessionId, isValidWorldId, isValidSessionId } from '../utils/validation';
-import { logRequest } from '../utils/requestLogger';
 import { Logger } from '../utils/logger';
 import { sanitizeInput } from '../utils/sanitization';
 
 import { InteractWithStoryRequest } from './api-types';
 import { Env } from '../routes';
 import { StoryService } from '../story/storyService';
-import { AIServiceManager, GeminiProvider, HuggingFaceProvider } from '../ai';
-import { OAuthService, UserDbService, WorldDbService, SessionDbService, StoryModelDbService, ChapterDbService, MessageDbService } from '../database';
+import { AIServiceManager, CloudflareAIProvider } from '../ai';
+import { WorldDbService, SessionDbService, StoryModelDbService, ChapterDbService, MessageDbService, UserDbService } from '../database';
 import { Chapter } from '../database/db-types';
-import { AuthService } from '../utils/authService';
 import { User } from '../database/db-types';
+import { AIModality, AIProviderType } from '../ai';
 
 export class StoryInteractionRouter {
-    private oAuth: OAuthService;
-    private userDB: UserDbService;
     private worldDB: WorldDbService;
     private sessionDB: SessionDbService;
+    private userDB: UserDbService;
     private storyModelDB: StoryModelDbService;
     private chapterDB: ChapterDbService;
     private messageDB: MessageDbService;
     private aiService: AIServiceManager;
     private storyService: StoryService;
-    private authService: AuthService;
 
-    constructor(env: Env, authService: AuthService, userDB: UserDbService) {
+    constructor(env: Env) {
         const timer = Date.now();
         const context = {
             component: 'StoryInteractionRouter',
@@ -34,29 +31,40 @@ export class StoryInteractionRouter {
 
         Logger.info('Initializing StoryInteractionRouter', context);
 
-        // Use passed-in services
-        this.authService = authService;
-        this.userDB = userDB;
-
         // Instantiate other DB services using env.DB
-        this.oAuth = new OAuthService(env.DB);
         this.worldDB = new WorldDbService(env.DB);
         this.sessionDB = new SessionDbService(env.DB);
+        this.userDB = new UserDbService(env.DB);
         this.storyModelDB = new StoryModelDbService(env.DB);
         this.chapterDB = new ChapterDbService(env.DB);
         this.messageDB = new MessageDbService(env.DB);
 
         this.aiService = new AIServiceManager();
-        if (env.GEMINI_API_KEY) {
-            this.aiService.setProvider(new GeminiProvider({ apiKey: env.GEMINI_API_KEY }));
-            Logger.info('AI provider configured', { ...context, metadata: { provider: 'Gemini' } });
-        } else if (env.HUGGINGFACE_API_KEY?.startsWith('hf_')) {
-            this.aiService.setProvider(new HuggingFaceProvider({ apiKey: env.HUGGINGFACE_API_KEY, model: 'mistralai/Mistral-7B-Instruct-v0.3' }));
-            Logger.info('AI provider configured', { ...context, metadata: { provider: 'HuggingFace', model: 'mistralai/Mistral-7B-Instruct-v0.3' } });
-        } else {
-            Logger.warn('No AI provider configured - service will not work properly', context);
-        }
+        // if (env.GEMINI_API_KEY) {
+        //     const geminiProvider = new GeminiProvider({ apiKey: env.GEMINI_API_KEY });
+        //     this.aiService.registerProvider(geminiProvider);
 
+        //     this.aiService.setDefaultProviderForModality(AIModality.TextToText, AIProviderType.Gemini);
+        //     Logger.info('AI provider configured', { ...context, metadata: { provider: 'Gemini' } });
+        // }
+        // else if (env.HUGGINGFACE_API_KEY?.startsWith('hf_')) {
+        //     const hfProvider = new HuggingFaceProvider({ apiKey: env.HUGGINGFACE_API_KEY, model: 'mistralai/Mistral-7B-Instruct-v0.3' });
+        //     this.aiService.registerProvider(hfProvider);
+        //     this.aiService.setDefaultProviderForModality(AIModality.TextToText, AIProviderType.HuggingFace);
+        //     Logger.info('AI provider configured', { ...context, metadata: { provider: 'HuggingFace', model: 'mistralai/Mistral-7B-Instruct-v0.3' } });
+        // }
+        if (env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_API_TOKEN){
+            this.aiService.registerProvider(
+                new CloudflareAIProvider({
+                    apiToken: env.CLOUDFLARE_API_TOKEN,
+                    accountId: env.CLOUDFLARE_ACCOUNT_ID
+                })
+            );
+            this.aiService.setDefaultProviderForModality(AIModality.TextToText, AIProviderType.Cloudflare);
+        } 
+        else {
+            Logger.warn('No AI provider configured', context);
+        }
         this.storyService = new StoryService(this.aiService);
 
         Logger.info('StoryInteractionRouter initialized successfully', { ...context, duration: Date.now() - timer });
@@ -75,11 +83,29 @@ export class StoryInteractionRouter {
         };
 
         Logger.debug('Processing route request', context);
-        logRequest(request);
 
         if (pathname === '/sessions/new' && method === 'POST') {
             Logger.info('Routing to create session', { ...context, operation: 'ROUTE_TO_CREATE_SESSION', duration: Date.now() - timer });
             return this.createSession(request, user, ctx);
+        }
+
+        if (pathname === '/sessions' && method === 'GET') {
+            Logger.info('Routing to list sessions', { ...context, operation: 'ROUTE_TO_LIST_SESSIONS', duration: Date.now() - timer });
+            return this.listSessions(request, user);
+        }
+
+        const sessionDetailsMatch = pathname.match(/^\/sessions\/([^\/]+)$/);
+        if (sessionDetailsMatch && method === 'GET') {
+            const sessionId = sessionDetailsMatch[1];
+            Logger.info('Routing to get session details', { ...context, sessionId, operation: 'ROUTE_TO_GET_SESSION', duration: Date.now() - timer });
+            return this.getSessionDetails(request, user, sessionId);
+        }
+
+        const sessionMessagesMatch = pathname.match(/^\/sessions\/([^\/]+)\/messages$/);
+        if (sessionMessagesMatch && method === 'GET') {
+            const sessionId = sessionMessagesMatch[1];
+            Logger.info('Routing to get session messages', { ...context, sessionId, operation: 'ROUTE_TO_GET_SESSION_MESSAGES', duration: Date.now() - timer });
+            return this.getSessionMessages(request, user, sessionId);
         }
 
         const chaptersMatch = pathname.match(/^\/sessions\/([^\/]+)\/chapters$/);
@@ -98,6 +124,82 @@ export class StoryInteractionRouter {
 
         Logger.debug('Route not handled by StoryInteractionRouter', { ...context, duration: Date.now() - timer });
         return null;
+    }
+
+    private async listSessions(request: Request, user: User): Promise<Response> {
+        const context = {
+            component: 'StoryInteractionRouter',
+            operation: 'LIST_SESSIONS',
+            userId: user.id
+        };
+
+        try {
+            const sessions = await this.userDB.getUserSessionsWithWorlds(user.id);
+            return createJsonResponse({ sessions });
+        } catch (error) {
+            Logger.error('Error listing sessions', error, context);
+            return createErrorResponse('Failed to list sessions', 500);
+        }
+    }
+
+    private async getSessionDetails(request: Request, user: User, sessionId: string): Promise<Response> {
+        const context = {
+            component: 'StoryInteractionRouter',
+            operation: 'GET_SESSION_DETAILS',
+            sessionId,
+            userId: user.id
+        };
+
+        try {
+            if (!isValidSessionId(sessionId)) {
+                return createErrorResponse('Invalid session ID format', 400);
+            }
+
+            const session = await this.sessionDB.getSessionWithUser(sessionId, user.id);
+            if (!session) {
+                return createErrorResponse('Session not found or access denied', 404, 'Not Found');
+            }
+
+            return createJsonResponse({
+                sessionId: session.id,
+                worldId: session.world_id,
+                createdAt: session.created_at,
+                updatedAt: session.updated_at
+            });
+        } catch (error) {
+            Logger.error('Error fetching session details', error, context);
+            return createErrorResponse('Failed to fetch session details', 500);
+        }
+    }
+
+    private async getSessionMessages(request: Request, user: User, sessionId: string): Promise<Response> {
+        const context = {
+            component: 'StoryInteractionRouter',
+            operation: 'GET_SESSION_MESSAGES',
+            sessionId,
+            userId: user.id
+        };
+
+        try {
+            if (!isValidSessionId(sessionId)) {
+                return createErrorResponse('Invalid session ID format', 400);
+            }
+
+            const session = await this.sessionDB.getSessionWithUser(sessionId, user.id);
+            if (!session) {
+                return createErrorResponse('Session not found or access denied', 404, 'Not Found');
+            }
+
+            const url = new URL(request.url);
+            const limitRaw = url.searchParams.get('limit');
+            const limit = limitRaw ? Math.min(Math.max(parseInt(limitRaw, 10) || 50, 1), 500) : 200;
+
+            const messages = await this.messageDB.getSessionMessages(sessionId, limit);
+            return createJsonResponse({ messages });
+        } catch (error) {
+            Logger.error('Error fetching session messages', error, context);
+            return createErrorResponse('Failed to fetch session messages', 500);
+        }
     }
 
 
@@ -261,48 +363,87 @@ export class StoryInteractionRouter {
                 return createErrorResponse('No active chapter found for this session', 404);
             }
 
-            const { narratorResponse, storyOutput, shouldTransition } = await this.storyService.processUserInput(
+            // 1) Fast path: generate narrator response and return it immediately.
+            // 2) Slow path: update chapter roadmap (StoryPredictor) in background.
+            const { narratorOutput, narratorResponse } = await this.storyService.generateNarratorResponse(
                 storyModel,
-                allChapters,
+                allChapters.current,
                 recentMessages,
                 userMessage,
                 user
             );
 
+            const shouldTransition = narratorOutput.shouldTransition;
+            const currentChapterNumber = allChapters.current.chapter_number;
+            const originalCurrentChapterId = allChapters.current.id;
+            const baseHistoryCount = allChapters.history.length + (shouldTransition ? 1 : 0);
+
+            // Keep message persistence and chapter transition synchronous to avoid races
+            // (e.g., user sends a new message immediately after this response).
+            await this.messageDB.createMessage(sessionId, 'user', userMessage, currentChapterNumber);
+            await this.messageDB.createMessage(sessionId, 'narrator', narratorResponse, currentChapterNumber);
+            await this.sessionDB.touchSession(sessionId);
+
+            if (shouldTransition) {
+                await this.chapterDB.completeCurrentChapter(sessionId);
+                await this.chapterDB.setNextChapterAsCurrent(sessionId);
+            }
+
             const handleBackgroundOperations = async () => {
                 try {
-                    const currentChapterNumber = allChapters.current!.chapter_number;
-                    await this.messageDB.createMessage(sessionId, 'user', userMessage, currentChapterNumber);
-                    const narratorMessagePromise = this.messageDB.createMessage(sessionId, 'narrator', narratorResponse, currentChapterNumber);
+                    const storyOutput = await this.storyService.generateStoryFeedback(
+                        storyModel,
+                        allChapters,
+                        recentMessages,
+                        userMessage,
+                        narratorOutput.response,
+                        user
+                    );
 
                     if (storyOutput.modifications.currentChapterModified) {
                         await this.chapterDB.updateChapterTitleAndDescription(
-                            allChapters.current!.id,
+                            originalCurrentChapterId,
                             storyOutput.currentChapter.title,
                             storyOutput.currentChapter.description
                         );
                     }
+
                     if (storyOutput.modifications.futureChaptersModified || storyOutput.modifications.newChaptersAdded) {
-                        await this.chapterDB.clearFutureChapters(sessionId);
-                        for (let i = 0; i < storyOutput.futureChapters.length; i++) {
-                            const chapter = storyOutput.futureChapters[i];
-                            await this.chapterDB.createChapter(sessionId, allChapters.history.length + 2 + i, chapter.title, chapter.description, 'future');
+                        // If we already transitioned, the first "future" chapter should become (and update) the new current chapter.
+                        if (shouldTransition) {
+                            const transitionedCurrent = await this.chapterDB.getCurrentChapter(sessionId);
+                            if (transitionedCurrent && storyOutput.futureChapters.length > 0) {
+                                const nextCurrent = storyOutput.futureChapters[0];
+                                await this.chapterDB.updateChapterTitleAndDescription(
+                                    transitionedCurrent.id,
+                                    nextCurrent.title,
+                                    nextCurrent.description
+                                );
+                            }
+
+                            const remainingFuture = storyOutput.futureChapters.slice(1);
+                            await this.chapterDB.clearFutureChapters(sessionId);
+                            for (let i = 0; i < remainingFuture.length; i++) {
+                                const chapter = remainingFuture[i];
+                                await this.chapterDB.createChapter(sessionId, baseHistoryCount + 2 + i, chapter.title, chapter.description, 'future');
+                            }
+                        } else {
+                            await this.chapterDB.clearFutureChapters(sessionId);
+                            for (let i = 0; i < storyOutput.futureChapters.length; i++) {
+                                const chapter = storyOutput.futureChapters[i];
+                                await this.chapterDB.createChapter(sessionId, baseHistoryCount + 2 + i, chapter.title, chapter.description, 'future');
+                            }
                         }
                     }
-                    if (shouldTransition) {
-                        await narratorMessagePromise;
-                        await this.chapterDB.completeCurrentChapter(sessionId);
-                        await this.chapterDB.setNextChapterAsCurrent(sessionId);
-                    }
                 } catch (error) {
-                    Logger.error('Background database operations failed', error, context);
+                    Logger.error('Background chapter update operations failed', error, context);
                 }
             };
 
             if (ctx) {
                 ctx.waitUntil(handleBackgroundOperations());
             } else {
-                handleBackgroundOperations();
+                await handleBackgroundOperations();
             }
 
             Logger.info('Story interaction completed successfully', {

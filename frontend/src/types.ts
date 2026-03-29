@@ -1,8 +1,10 @@
 export interface World {
   id: string;
+  creator_id?: number | null;
   title: string;
   description: string | null;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface SessionData {
@@ -69,14 +71,15 @@ export interface UserWorld {
 
 // Bottom Tab Navigator types
 export type BottomTabParamList = {
-  WorldGeneration: undefined;
-  WorldSelection: undefined;
+  Home: undefined;
+  Search: undefined;
   Profile: undefined;
 };
 
 export type RootStackParamList = {
   GoogleAuth: undefined;
   MainTabs: undefined;
-  Session: { worldId: string; worldTitle?: string };
+  Session: { worldId: string; worldTitle?: string; sessionId?: string };
   Chapters: { sessionId: string; worldTitle?: string };
+  WorldGeneration: { worldId: string };
 };

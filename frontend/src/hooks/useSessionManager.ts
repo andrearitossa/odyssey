@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { SessionData, Message } from '../types';
-import { createSession } from '../api';
+import { createSession, getSessionDetails, getSessionMessages } from '../api';
 import { API_URL, authenticatedFetch, handleResponse } from '../api/api';
 import { SessionManager } from '../utils/storage';
 
@@ -10,7 +10,7 @@ interface UseSessionManagerReturn {
   isSessionLoading: boolean;
   isInteracting: boolean;
   // Session management
-  startSession: (worldId: string) => Promise<void>;
+  startSession: (worldId: string, sessionId?: string) => Promise<void>;
   resetSession: (worldId: string) => Promise<void>;
   endSession: () => Promise<void>;
   sendMessage: (message: string) => Promise<void>;
@@ -68,6 +68,20 @@ const parseNarratorResponse = (response: string, timestamp: Date): Message[] => 
   return messages;
 };
 
+const parseDbDate = (value: string): Date => {
+  // D1/SQLite often returns `YYYY-MM-DD HH:MM:SS` which JS parses inconsistently.
+  // Normalize to an ISO-ish string when needed.
+  const trimmed = (value || '').trim();
+  if (!trimmed) return new Date();
+
+  const normalized = trimmed.includes(' ') && !trimmed.includes('T')
+    ? `${trimmed.replace(' ', 'T')}Z`
+    : trimmed;
+
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+};
+
 export const useSessionManager = (): UseSessionManagerReturn => {
   const [currentSession, setCurrentSession] = useState<SessionData | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -102,33 +116,61 @@ export const useSessionManager = (): UseSessionManagerReturn => {
     saveCurrentSession();
   }, [currentSession, messages]);
 
-  const startSession = async (worldId: string) => {
-  setIsSessionLoading(true);
+  const startSession = async (worldId: string, sessionId?: string) => {
+    setIsSessionLoading(true);
 
-  try {
-    const existingSession = await SessionManager.getSessionByWorld(worldId);
+    try {
+      // If an explicit sessionId is provided, prefer loading it from the server
+      if (sessionId) {
+        const details = await getSessionDetails(sessionId);
+        const stored = await getSessionMessages(sessionId, 500);
 
-    if (existingSession.session && existingSession.messages) {
-      setCurrentSession(existingSession.session);
-      setMessages(existingSession.messages);
+        const resumedSession: SessionData = {
+          sessionId: details.sessionId,
+          worldId: details.worldId,
+          createdAt: details.createdAt,
+        };
+
+        const resumedMessages: Message[] = [];
+        for (const msg of stored) {
+          const ts = parseDbDate(msg.created_at);
+          if (msg.type === 'user') {
+            resumedMessages.push({ type: 'user', text: msg.content, timestamp: ts });
+          } else {
+            resumedMessages.push(...parseNarratorResponse(msg.content, ts));
+          }
+        }
+
+        setCurrentSession(resumedSession);
+        setMessages(resumedMessages);
+        await SessionManager.saveSessionByWorld(details.worldId, resumedSession, resumedMessages);
+        setIsSessionLoading(false);
+        return;
+      }
+
+      const existingSession = await SessionManager.getSessionByWorld(worldId);
+
+      if (existingSession.session && existingSession.messages) {
+        setCurrentSession(existingSession.session);
+        setMessages(existingSession.messages);
+        setIsSessionLoading(false);
+        return;
+      }
+
+      const session = await createSession(worldId);
+
+      setCurrentSession(session);
+      setMessages([]);
+      await SessionManager.saveSessionByWorld(worldId, session, []);
+
       setIsSessionLoading(false);
-      return;
+      await autoSendStartMessage(session, []);
+    } catch (error) {
+      console.error('Failed to start session:', error);
+      setIsSessionLoading(false);
+      throw error;
     }
-
-    const session = await createSession(worldId);
-
-    setCurrentSession(session);
-    setMessages([]);
-    await SessionManager.saveSessionByWorld(worldId, session, []);
-
-    setIsSessionLoading(false);
-    await autoSendStartMessage(session, []);
-  } catch (error) {
-    console.error('Failed to start session:', error);
-    setIsSessionLoading(false);
-    throw error;
-  }
-};
+  };
 
   const resetSession = async (worldId: string) => {
     setIsInteracting(false);
@@ -220,9 +262,6 @@ export const useSessionManager = (): UseSessionManagerReturn => {
       const finalMessages = [...currentMessages, ...parsedMessages];
       console.log('Auto-start final messages to set:', finalMessages); // Debug log
       setMessages(finalMessages);
-      
-      // Save the session with the new messages
-      await SessionManager.saveSessionByWorld(session.worldId, session, finalMessages);
     } catch (error) {
       console.error('Failed to auto-send start message:', error);
     } finally {
@@ -268,9 +307,6 @@ export const useSessionManager = (): UseSessionManagerReturn => {
       const finalMessages = [...updatedMessages, ...parsedMessages];
       console.log('Final messages to set:', finalMessages); // Debug log
       setMessages(finalMessages);
-      
-      // Save the session with the new messages
-      await SessionManager.saveSessionByWorld(currentSession.worldId, currentSession, finalMessages);
     } catch (error) {
       console.error('Failed to send message:', error);
       throw error;

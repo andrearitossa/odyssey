@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { RootStackParamList, Chapter, GetChaptersResponse } from '../types';
 import { GoogleTokenManager } from '../api/googleAuth';
 import { getChapters } from '../api/sessions';
+import { AppHeader, ErrorView, LoadingView, Screen, theme } from '../ui';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chapters'>;
 
@@ -103,7 +104,7 @@ export const ChaptersScreen: React.FC<Props> = ({ route, navigation }) => {
         
         {isCurrent && (
           <View style={styles.currentIndicator}>
-            <Ionicons name="play-circle" size={16} color="#8B5CF6" />
+            <Ionicons name="play-circle" size={16} color={theme.colors.goldDark} />
             <Text style={styles.currentIndicatorText}>In Progress</Text>
           </View>
         )}
@@ -114,42 +115,33 @@ export const ChaptersScreen: React.FC<Props> = ({ route, navigation }) => {
   // Loading state
   if (loading) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color="#8B5CF6" />
-        <Text style={styles.loadingText}>Loading chapters...</Text>
-      </View>
+      <Screen>
+        <LoadingView label="Loading chapters..." />
+      </Screen>
     );
   }
 
   // Error state
   if (error) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={loadChapters}>
-          <Text style={styles.retryButtonText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
+      <Screen>
+        <ErrorView message={error} onRetry={loadChapters} />
+      </Screen>
     );
   }
 
   // Main content
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton} 
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="chevron-back" size={24} color="#8B5CF6" />
-          <Text style={styles.backButtonText}>Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {worldTitle ? `${worldTitle} - Chapters` : 'Chapters'}
-        </Text>
-        <View style={styles.headerSpacer} />
-      </View>
+    <Screen>
+      <AppHeader
+        title={worldTitle ? `${worldTitle} - Chapters` : 'Chapters'}
+        left={
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+            <Ionicons name="chevron-back" size={24} color={theme.colors.wine} />
+            <Text style={styles.backButtonText}>Back</Text>
+          </TouchableOpacity>
+        }
+      />
 
       <ScrollView 
         style={styles.chaptersContainer} 
@@ -196,55 +188,31 @@ export const ChaptersScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
         )}
       </ScrollView>
-    </View>
+    </Screen>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: theme.colors.background,
   },
   centered: {
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    paddingTop: 20,
-    backgroundColor: 'white',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 8,
     paddingHorizontal: 4,
-    flex: 1,
   },
   backButtonText: {
     fontSize: 16,
-    color: '#8B5CF6',
+    color: theme.colors.wine,
     marginLeft: 4,
     fontWeight: '500',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    flex: 2,
-    textAlign: 'center',
-  },
-  headerSpacer: {
-    flex: 1,
   },
   chaptersContainer: {
     flex: 1,
@@ -253,20 +221,18 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   summaryContainer: {
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     borderRadius: 12,
     padding: 20,
     marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadow,
   },
   summaryTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#1E293B',
+    color: theme.colors.text,
     marginBottom: 16,
     textAlign: 'center',
   },
@@ -281,12 +247,12 @@ const styles = StyleSheet.create({
   statNumber: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#8B5CF6',
+    color: theme.colors.wine,
     marginBottom: 4,
   },
   statLabel: {
     fontSize: 12,
-    color: '#64748B',
+    color: theme.colors.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -294,15 +260,13 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   chapterCard: {
-    backgroundColor: 'white',
+    backgroundColor: theme.colors.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadow,
   },
   // History chapter styles
   historyCard: {
@@ -312,11 +276,9 @@ const styles = StyleSheet.create({
   },
   // Current chapter styles
   currentCard: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: theme.colors.surfaceAlt,
     borderLeftWidth: 4,
-    borderLeftColor: '#8B5CF6',
-    shadowColor: '#8B5CF6',
-    shadowOpacity: 0.1,
+    borderLeftColor: theme.colors.wine,
   },
   // Future chapter styles
   futureCard: {
@@ -342,7 +304,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#9CA3AF',
   },
   currentNumber: {
-    backgroundColor: '#8B5CF6',
+    backgroundColor: theme.colors.wine,
   },
   futureNumber: {
     backgroundColor: '#10B981',
@@ -376,7 +338,7 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
   currentStatusText: {
-    color: '#8B5CF6',
+    color: theme.colors.wine,
   },
   futureStatusText: {
     color: '#10B981',
@@ -384,7 +346,7 @@ const styles = StyleSheet.create({
   chapterTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#1E293B',
+    color: theme.colors.text,
     marginBottom: 8,
   },
   historyTitle: {
@@ -399,7 +361,7 @@ const styles = StyleSheet.create({
   chapterDescription: {
     fontSize: 14,
     lineHeight: 20,
-    color: '#64748B',
+    color: theme.colors.textMuted,
     marginBottom: 8,
   },
   historyDescription: {
@@ -418,7 +380,7 @@ const styles = StyleSheet.create({
   },
   currentIndicatorText: {
     fontSize: 12,
-    color: '#8B5CF6',
+    color: theme.colors.goldDark,
     marginLeft: 4,
     fontWeight: '500',
   },
@@ -435,7 +397,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   retryButton: {
-    backgroundColor: '#8B5CF6',
+    backgroundColor: theme.colors.wine,
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 8,

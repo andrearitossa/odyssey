@@ -13,6 +13,20 @@ cd backend
 npm run dev
 ```
 
+### DEPLOY
+
+#### Backend Deployment
+```bash
+cd backend
+wrangler deploy
+```
+
+#### Frontend Deployment
+```bash
+cd frontend
+npm run deploy
+```
+
 
 ## SETUP:
 - Node.js 20
@@ -102,18 +116,4 @@ cd frontend
 
 npm install
 npm start
-```
-
-### Deployment
-
-#### Backend Deployment
-```bash
-cd backend
-wrangler deploy --env production
-```
-
-#### Frontend Deployment
-```bash
-cd frontend
-npm run deploy
 ```

@@ -2,7 +2,6 @@
 export { StoryInitializer } from './storyInitializer';
 export { StoryNarrator } from './storyNarrator';
 export { StoryPredictor } from './storyPredictor';
-export { StoryOptimizer } from './storyOptimizer';
 export { StoryService } from './storyService';
 
 // Export utility functions
@@ -25,7 +24,3 @@ export type {
 export type {
     ProcessUserInputOutput
 } from './storyService';
-export type {
-    OptimizerInput,
-    OptimizerOutput
-} from './storyOptimizer'; 
