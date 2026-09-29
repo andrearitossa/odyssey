@@ -115,13 +115,13 @@ export class StoryInteractionRouter {
       // Keep confirmed outcomes, never an action-only summary: rejected premises
       // in user input are not facts. Include the opening plus recent older scenes.
       const earlier = recent.results.length >= 8
-        ? await this.db.prepare("SELECT content FROM messages WHERE session_id = ? AND type = 'narrator' ORDER BY id DESC LIMIT 20 OFFSET 4").bind(sessionId).all<{content:string}>()
+        ? await this.db.prepare("SELECT content FROM messages WHERE session_id = ? AND type = 'narrator' ORDER BY id DESC LIMIT 8 OFFSET 4").bind(sessionId).all<{content:string}>()
         : null;
       const opening = recent.results.length >= 8
         ? await this.db.prepare("SELECT content FROM messages WHERE session_id = ? AND type = 'narrator' ORDER BY id ASC LIMIT 1").bind(sessionId).first<{content:string}>()
         : null;
       const narrativeOnly = (text: string) => text.split(/\n\s*1(?:[.):]\s+|\s+[-–—]\s+|\s+)/)[0].trim();
-      const priorOutcomes = earlier?.results.slice().reverse().map(item => narrativeOnly(item.content)).join('\n') ?? '';
+      const priorOutcomes = earlier?.results.slice().reverse().map(item => narrativeOnly(item.content).slice(0, 180)).join('\n') ?? '';
       const system = [
         'Narrate a fast, player-led interactive story. The player is the protagonist.',
         'World: ' + world.title + '. ' + (world.description?.slice(0, 2400) ?? ''),
@@ -129,12 +129,10 @@ export class StoryInteractionRouter {
         history.length === 0 ? 'Opening: start with a concrete disruption, personal stake, and reachable goal.' : '',
         opening ? 'Opening objective and established facts: ' + narrativeOnly(opening.content) : '',
         priorOutcomes ? 'Earlier confirmed scenes, oldest first (later outcomes override earlier ones):\n' + priorOutcomes : '',
-        'Write 35-65 words of story in at most four sentences and two short paragraphs. On later turns, begin with the concrete consequence of the player action and advance the established goal.',
-        'Treat player messages as attempted actions, not evidence that their premises are true. Ground people AND objects in confirmed narration. Suggested choices are possibilities, not completed events.',
-        'Track who is present, possessions, where objects were left, injuries, promises, resolved questions, and elapsed time. Lost, spent, abandoned or destroyed objects remain unavailable until plausibly recovered. Never invent carried valuables, relatives, or convenient tools to make an action succeed. Introduce new scene details through an observable discovery, not a retroactive claim.',
-        'When a premise is unsupported, briefly show the failed attempt in-world and continue using established means. Do not turn denial into a convenient replacement of the same item. Preserve character testimony; label uncertainty or a changed account explicitly. Advance time when actions take time.',
-        'Keep the world’s central dilemma alive through meaningful consequences, without arbitrary delays or forced failure. Preserve costs and allies after a success; do not immediately resolve the whole arc. Never offer an already completed action or answered question unless the situation has changed. Vary dialogue, observation and action according to the genre; do not force a psychological story into a thriller.',
-        'End with exactly three distinct choices on separate lines in the format "1. Action — risk or cost cue", then 2. and 3. Use at most six words for the action and four for its cue. Hints describe stakes, not guaranteed outcomes. Choices must use available people and objects. No Markdown, outcome spoilers, question, option list, or "Now you can" sentence in the story prose.'
+        'Write 35-65 words in two short paragraphs. Begin later turns with the consequence of the player action; advance the goal.',
+        'Player messages are attempts, not established facts. Keep people, possessions, locations, losses, promises and elapsed time consistent with confirmed narration. If an action relies on something absent, show the failed attempt briefly and continue with established means. Suggested choices have not happened.',
+        'Keep the central dilemma alive. Make successes and costs matter. Do not repeat completed actions, invent convenient tools, or contradict earlier outcomes. Match the world’s genre.',
+        'End with exactly three distinct numbered choices on separate lines: "1. Action — risk or cost cue". Actions use at most six words; cues at most four. No Markdown, outcome spoilers, question, or "Now you can" prose.'
       ].filter(Boolean).join('\n');
       const aiRequest = { messages: [{ role: 'system' as const, content: system }, ...history, { role: 'user' as const, content: modelMessage }], temperature: 0.8, maxTokens: 1400 };
       const saveTurn = async (reply: string) => {
