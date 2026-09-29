@@ -41,7 +41,7 @@ function getCachedRouter(env: Env): ApiRouter {
 	}
 
 	// Create a cache key based on environment variables that matter
-	const currentCacheKey = `${env.GEMINI_API_KEY || ''}_${env.HUGGINGFACE_API_KEY || ''}_${env.OPENAI_API_KEY || ''}`;
+	const currentCacheKey = `${env.GEMINI_API_KEY || ''}_${env.GEMINI_MODEL || ''}_${env.HUGGINGFACE_API_KEY || env.HUGGING_FACE_API_KEY || ''}_${env.AI_MODEL || ''}_${Boolean(env.AI)}`;
 	
 	// Return cached router if env hasn't changed
 	if (cachedRouter && cacheKey === currentCacheKey) {
@@ -127,6 +127,7 @@ export default {
 			headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
 			headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 			headers.set('X-Request-ID', requestId); // Add request ID for tracking
+			headers.set('Cache-Control', 'no-store');
 			
 			return new Response(response.body, {
 				status: response.status,
@@ -166,6 +167,7 @@ export default {
 						'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 						'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 						'X-Request-ID': requestId,
+						'Cache-Control': 'no-store',
 					},
 				}
 			);

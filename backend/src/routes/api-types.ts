@@ -8,6 +8,7 @@ export interface CreateSessionResponse {
 
 export interface InteractWithStoryRequest {
   message: string;
+  requestId?: string;
 }
 
 export interface InteractWithStoryResponse {
@@ -40,4 +41,4 @@ export interface ApiError {
   error: string;
   message: string;
   status: number;
-} 
+}

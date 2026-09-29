@@ -1,69 +1,80 @@
-import React, { useEffect, useCallback } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useNavigation } from '@react-navigation/native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { RootStackParamList } from '../types';
-
-import { GoogleAuthScreen } from '../screens/GoogleAuthScreen';
-import { SessionScreen } from '../screens/SessionScreen';
-import { BottomTabNavigator } from './BottomTabNavigator';
-import { ChaptersScreen } from '../screens/ChaptersScreen';
-import { AuthProvider, useAuth } from '../contexts/AuthContext';
-import { setGlobalAuthErrorHandler } from '../api/api';
-
+import React from "react";
+import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { ActivityIndicator, View, Text } from "react-native";
+import { RootStackParamList } from "../types";
+import { Action } from "../components/Action";
+import { SessionScreen } from "../screens/SessionScreen";
+import { BottomTabNavigator } from "./BottomTabNavigator";
+import { AuthProvider, useAuth } from "../contexts/AuthContext";
+import { colors, layout } from "../theme";
 const Stack = createNativeStackNavigator<RootStackParamList>();
-
-const AppStack: React.FC = () => {
-  const { handleAuthError, setOnAuthRequired, isAuthenticated, isAuthLoading } = useAuth();
-  const navigation = useNavigation<any>();
-
-  const handleNavToAuth = useCallback(() => {
-    navigation.navigate('GoogleAuth');
-  }, [navigation]);
-
-  useEffect(() => {
-    // Set up global auth error handler
-    setGlobalAuthErrorHandler(handleAuthError);
-    
-    // Set up navigation callback for auth errors
-    setOnAuthRequired(handleNavToAuth);
-  }, [handleAuthError, setOnAuthRequired, handleNavToAuth]);
-
-  useEffect(() => {
-    if (!isAuthLoading) {
-      if (isAuthenticated) {
-        navigation.navigate('MainTabs');
-      } else {
-        navigation.navigate('GoogleAuth');
-      }
-    }
-  }, [isAuthLoading, isAuthenticated, navigation]);
-
+function AppStack() {
+  const { user, isAuthenticated, isAuthLoading, error, checkAuth } = useAuth();
+  if (isAuthLoading)
+    return (
+      <View style={[layout.screen, { justifyContent: "center" }]}>
+        <ActivityIndicator color={colors.accent} />
+      </View>
+    );
+  if (!isAuthenticated)
+    return (
+      <View
+        style={[
+          layout.screen,
+          {
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 24,
+            gap: 20,
+          },
+        ]}
+      >
+        <Text style={layout.title}>Odyssey</Text>
+        <Text accessibilityRole="alert" style={layout.body}>
+          {error}
+        </Text>
+        <Action label="Reconnect" onPress={checkAuth} />
+      </View>
+    );
   return (
-    <Stack.Navigator 
-      initialRouteName="GoogleAuth"
-      screenOptions={{ 
+    <Stack.Navigator
+      key={user?.id}
+      screenOptions={{
         headerShown: false,
-        animation: 'slide_from_right'
+        animation: "fade",
+        contentStyle: { backgroundColor: colors.background },
       }}
     >
-      <Stack.Screen name="GoogleAuth" component={GoogleAuthScreen} />
       <Stack.Screen name="MainTabs" component={BottomTabNavigator} />
       <Stack.Screen name="Session" component={SessionScreen} />
-      <Stack.Screen name="Chapters" component={ChaptersScreen} />
     </Stack.Navigator>
   );
-};
-
-export const AppNavigator: React.FC = () => {
+}
+export function AppNavigator() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <AuthProvider>
-        <NavigationContainer>
-          <AppStack />
-        </NavigationContainer>
-      </AuthProvider>
+      <SafeAreaProvider>
+        <AuthProvider>
+          <NavigationContainer
+            theme={{
+              ...DefaultTheme,
+              colors: {
+                ...DefaultTheme.colors,
+                background: colors.background,
+                card: colors.surface,
+                text: colors.text,
+                primary: colors.accent,
+                border: colors.line,
+              },
+            }}
+          >
+            <AppStack />
+          </NavigationContainer>
+        </AuthProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
-}; 
+}

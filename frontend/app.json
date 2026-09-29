@@ -36,14 +36,6 @@
         "https://odissey.app",
         "https://odissey-backend.andre-ritossa.workers.dev"
       ]
-    },
-    "plugins": [
-      [
-        "expo-audio",
-        {
-          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone for world generation."
-        }
-      ]
-    ]
+    }
   }
 }

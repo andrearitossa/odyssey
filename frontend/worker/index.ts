@@ -164,12 +164,15 @@ export default {
         
         try {
           // Use service binding for direct worker-to-worker communication
+          const serviceUrl = new URL(request.url);
+          serviceUrl.pathname = serviceUrl.pathname.slice(4);
+          const serviceRequest = new Request(serviceUrl, request);
           if (env.BACKEND) {
-            response = await env.BACKEND.fetch(request);
+            response = await env.BACKEND.fetch(serviceRequest);
           } else {
             // Fallback to external URL if service binding is not available
             const backendUrl = "https://odissey-backend.andre-ritossa.workers.dev";
-            const proxyUrl = new URL(url.pathname + url.search, backendUrl);
+            const proxyUrl = new URL(serviceUrl.pathname + serviceUrl.search, backendUrl);
             
             FrontendLogger.warn(`Service binding not available, falling back to external URL`, {
               requestId,

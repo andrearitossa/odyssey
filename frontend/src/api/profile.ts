@@ -1,11 +1,8 @@
-import { ApiClient } from './api';
+import { ApiClient } from "./api";
 
 export interface User {
   id: number;
-  google_id: string;
-  email: string;
   name: string;
-  picture_url?: string;
   language: string;
   created_at: string;
   updated_at: string;
@@ -41,14 +38,16 @@ export class ProfileAPI {
    * Get user profile with their worlds
    */
   static async getProfile(): Promise<ProfileResponse> {
-    return await this.apiClient.get<ProfileResponse>('/profile');
+    return await this.apiClient.get<ProfileResponse>("/profile");
   }
 
   /**
    * Update user profile (name and/or language)
    */
-  static async updateProfile(updates: ProfileUpdateRequest): Promise<ProfileResponse> {
-    return await this.apiClient.put<ProfileResponse>('/profile', updates);
+  static async updateProfile(
+    updates: ProfileUpdateRequest,
+  ): Promise<ProfileResponse> {
+    return await this.apiClient.put<ProfileResponse>("/profile", updates);
   }
 
   /**
@@ -67,13 +66,13 @@ export class ProfileAPI {
 }
 
 export const SUPPORTED_LANGUAGES = [
-  'English',
-  'French', 
-  'German',
-  'Italian',
-  'Swedish',
-  'Spanish',
-  'Portuguese'
+  "English",
+  "French",
+  "German",
+  "Italian",
+  "Swedish",
+  "Spanish",
+  "Portuguese",
 ] as const;
 
-export type SupportedLanguage = typeof SUPPORTED_LANGUAGES[number]; 
+export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];

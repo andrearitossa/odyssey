@@ -9,7 +9,7 @@ export interface AnonymousSession {
   last_seen_at: string;
 }
 
-// New authenticated user from Google OAuth
+// Profile columns retain their legacy names for database compatibility.
 export interface User {
   id: number;
   google_id: string;
@@ -20,17 +20,6 @@ export interface User {
   created_at: string;
   updated_at: string;
   last_login_at: string;
-}
-
-// Google OAuth session for token management
-export interface GoogleOAuthSession {
-  id: number;
-  user_id: number;
-  access_token: string;
-  refresh_token?: string;
-  expires_at: string;
-  created_at: string;
-  updated_at: string;
 }
 
 // Migration tracking
@@ -44,7 +33,6 @@ export interface World {
   id: string;
   title: string;
   description: string | null;
-  created_at: string;
 }
 
 export interface Session {
@@ -89,4 +77,4 @@ export interface Chapter {
   updated_at: string;
 }
 
- 
+

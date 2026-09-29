@@ -8,12 +8,13 @@ import { handleAuthError } from './utils/errorHandling';
 // === ENVIRONMENT BINDINGS ===
 export interface Env {
   DB: D1Database;
+  AI?: Ai;
+  AI_MODEL?: string;
+  GEMINI_MODEL?: string;
   HUGGINGFACE_API_KEY?: string;
+  HUGGING_FACE_API_KEY?: string;
   OPENAI_API_KEY?: string;
   GEMINI_API_KEY?: string;
-  // Google OAuth configuration
-  GOOGLE_CLIENT_ID?: string;
-  GOOGLE_CLIENT_SECRET?: string;
   // Logging configuration
   LOG_LEVEL?: string;
   LOG_SAMPLING_RATE?: string;
@@ -21,39 +22,35 @@ export interface Env {
 }
 
 // Import all route modules
-import { GoogleAuthRouter } from './routes/googleAuth';
+import { AccountsRouter } from './routes/accounts';
 import { StoryInteractionRouter } from './routes/storyInteraction';
 import { WorldsRouter } from './routes/worlds';
-import { WorldGenerationRouter } from './routes/worldGeneration';
 import { ProfileRouter } from './routes/profile';
 import { HealthRouter } from './routes/health';
 
 // Import database and auth services
-import { OAuthService, UserDbService } from './database';
+import { UserDbService } from './database';
 import { AuthService } from './utils/authService';
 import { User } from './database/db-types';
 
 export class ApiRouter {
-  private googleAuthRouter: GoogleAuthRouter;
+  private accountsRouter: AccountsRouter;
   private storyInteractionRouter: StoryInteractionRouter;
   private worldsRouter: WorldsRouter;
-  private worldGenerationRouter: WorldGenerationRouter;
   private profileRouter: ProfileRouter;
   private healthRouter: HealthRouter;
   private authService: AuthService; // Add authService as a member
 
   constructor(env: Env) {
     // Initialize core services once
-    const oAuthService = new OAuthService(env.DB);
     const userDbService = new UserDbService(env.DB);
-    this.authService = new AuthService(oAuthService, userDbService); // Assign to member
+    this.authService = new AuthService(env.DB, userDbService); // Assign to member
 
-    this.googleAuthRouter = new GoogleAuthRouter(env, oAuthService, userDbService, this.authService);
-    this.storyInteractionRouter = new StoryInteractionRouter(env, this.authService, userDbService);
+    this.accountsRouter = new AccountsRouter(env.DB, this.authService, userDbService);
+    this.storyInteractionRouter = new StoryInteractionRouter(env);
     this.worldsRouter = new WorldsRouter(env, this.authService, userDbService);
-    this.worldGenerationRouter = new WorldGenerationRouter(this.authService);
     this.profileRouter = new ProfileRouter(this.authService, userDbService); // ProfileRouter no longer needs env directly
-    this.healthRouter = new HealthRouter(); // HealthRouter doesn't need services
+    this.healthRouter = new HealthRouter(env);
   }
 
   // New helper method for authenticated routes
@@ -72,6 +69,24 @@ export class ApiRouter {
     logRequest(request);
 
     try {
+      if (request.method === 'POST' || request.method === 'PUT') {
+        const reader = request.body?.getReader();
+        if (reader) {
+          const chunks: Uint8Array[] = [];
+          let total = 0;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            total += value.byteLength;
+            if (total > 16384) { await reader.cancel(); return createErrorResponse('Request is too large.', 413); }
+            chunks.push(value);
+          }
+          const body = new Uint8Array(total);
+          let offset = 0;
+          for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
+          request = new Request(request, { body });
+        }
+      }
       const url = new URL(request.url);
       const pathname = url.pathname;
       const method = request.method;
@@ -85,14 +100,7 @@ export class ApiRouter {
         return healthResponse;
       }
 
-      // Google OAuth routes (handled by GoogleAuthRouter, which manages its own auth flow)
-      if (pathname.startsWith('/auth/google') || pathname.startsWith('/auth/validate-google') || pathname.startsWith('/auth/logout') || pathname.startsWith('/auth/welcome')) {
-        const googleResponse = await this.googleAuthRouter.route(request, ctx);
-        if (googleResponse === null) {
-          return createErrorResponse('Route not found', 404, 'Not Found');
-        }
-        return googleResponse;
-      }
+      if (pathname.startsWith('/auth/')) return await this.accountsRouter.route(request);
 
       // Authenticated routes
       if (pathname.startsWith('/profile')) {
@@ -112,16 +120,6 @@ export class ApiRouter {
             return createErrorResponse('Route not found', 404, 'Not Found');
           }
           return worldsResponse;
-        });
-      }
-
-      if (pathname.startsWith('/world-generation')) {
-        return await this.handleAuthenticatedRoute(request, ctx, async (req, user, context) => {
-          const worldGenerationResponse = await this.worldGenerationRouter.route(req, user, context);
-          if (worldGenerationResponse === null) {
-            return createErrorResponse('Route not found', 404, 'Not Found');
-          }
-          return worldGenerationResponse;
         });
       }
 
@@ -146,4 +144,4 @@ export class ApiRouter {
       return createErrorResponse('Internal server error', 500, 'Internal Server Error');
     }
   }
-} 
+}

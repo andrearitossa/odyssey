@@ -1,385 +1,200 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
-import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
-import { 
-  useAudioRecorder, 
-  useAudioRecorderState, 
-  useAudioPlayer,
-  useAudioPlayerStatus,
-  AudioModule,
-  RecordingPresets,
-  setAudioModeAsync 
-} from 'expo-audio';
-import { BottomTabParamList } from '../types';
-import { WorldGenerationAPI } from '../api/worldGeneration';
-
-type Props = BottomTabScreenProps<BottomTabParamList, 'WorldGeneration'>;
-
-interface AudioState {
-  isLoading: boolean;
-  hasResponse: boolean;
-  permissionGranted: boolean;
-  hasRecording: boolean; // Track if we have a recording ready to send
-}
-
-export const WorldGenerationScreen: React.FC<Props> = ({ navigation }) => {
-  const [audioState, setAudioState] = useState<AudioState>({
-    isLoading: false,
-    hasResponse: false,
-    permissionGranted: false,
-    hasRecording: false,
-  });
-  // Recording setup
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const recorderState = useAudioRecorderState(audioRecorder);
-  
-  // Response audio playback setup - initially no source
-  const [responseAudioSource, setResponseAudioSource] = useState<string | null>(null);
-  const responsePlayer = useAudioPlayer(responseAudioSource);
-  const playerStatus = useAudioPlayerStatus(responsePlayer);
-
-  useEffect(() => {
-    setupAudio();
-    return () => {
-      cleanupAudio();
-    };
-  }, []);
-
-  // Handle audio completion - reset when audio finishes playing
-  useEffect(() => {
-    if (playerStatus && playerStatus.didJustFinish) {
-      resetToInitialState();
-    }
-  }, [playerStatus?.didJustFinish]);
-
-  const setupAudio = async () => {
+import React, { useRef, useState } from "react";
+import {
+  View,
+  Text,
+  ScrollView,
+  TextInput,
+  Pressable,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { CompositeScreenProps } from "@react-navigation/native";
+import { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
+import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { BottomTabParamList, RootStackParamList } from "../types";
+import { createWorld } from "../api";
+import { Action } from "../components/Action";
+import { colors, layout } from "../theme";
+type Props = CompositeScreenProps<
+  BottomTabScreenProps<BottomTabParamList, "WorldGeneration">,
+  NativeStackScreenProps<RootStackParamList>
+>;
+const sparks = [
+  {
+    label: "✧  A little magic",
+    title: "The Midnight Library",
+    description:
+      "A hidden library opens only at midnight. Every book is a door into a forgotten world, and tonight one of them is calling your name.",
+  },
+  {
+    label: "☾  Far from home",
+    title: "Beyond the Last Star",
+    description:
+      "You wake aboard a silent ship at the edge of known space. A distant planet is broadcasting a message in your own voice.",
+  },
+  {
+    label: "◇  A beautiful mystery",
+    title: "The City of Lost Hours",
+    description:
+      "In a rain-soaked city, an hour has vanished from everyone’s memory. You find a photograph of yourself in a place that no longer exists.",
+  },
+];
+export function WorldGenerationScreen({ navigation }: Props) {
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const pending = useRef(false);
+  const create = async () => {
+    if (!title.trim() || pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    setError("");
     try {
-      // Request recording permissions
-      const status = await AudioModule.requestRecordingPermissionsAsync();
-      if (!status.granted) {
-        Alert.alert('Permission Required', 'Permission to access microphone was denied');
-        return;
-      }
-
-      // Set audio mode for recording and playback
-      await setAudioModeAsync({
-        playsInSilentMode: true,
-        allowsRecording: true,
-      });
-
-      setAudioState(prev => ({ ...prev, permissionGranted: true }));
-    } catch (error) {
-      console.error('Error setting up audio:', error);
-      Alert.alert('Error', 'Failed to set up audio. Please check permissions.');
+      const world = await createWorld(
+        title.trim(),
+        description.trim() || undefined,
+      );
+      setTitle("");
+      setDescription("");
+      if (navigation.isFocused())
+        navigation.navigate("Session", {
+          worldId: world.id,
+          worldTitle: world.title,
+        });
+    } catch {
+      setError(
+        "Your world couldn’t be created. Your idea is still here—try again.",
+      );
+    } finally {
+      pending.current = false;
+      setBusy(false);
     }
   };
-
-  const cleanupAudio = () => {
-    // Cleanup response audio URL if it exists
-    if (responseAudioSource) {
-      URL.revokeObjectURL(responseAudioSource);
-    }
-  };
-
-  const resetToInitialState = () => {
-    // Clean up response audio
-    if (responseAudioSource) {
-      URL.revokeObjectURL(responseAudioSource);
-      setResponseAudioSource(null);
-    }
-    
-    // Reset all state
-    setAudioState(prev => ({
-      ...prev,
-      isLoading: false,
-      hasResponse: false,
-      hasRecording: false
-    }));
-  };
-
-  const startRecording = async () => {
-    try {
-      if (!audioState.permissionGranted) {
-        Alert.alert('Error', 'Microphone permission not granted');
-        return;
-      }
-
-      // Clear any previous response and reset recording state
-      setAudioState(prev => ({ ...prev, hasResponse: false, hasRecording: false }));
-      
-      await audioRecorder.prepareToRecordAsync();
-      audioRecorder.record();
-    } catch (error) {
-      console.error('Error starting recording:', error);
-      Alert.alert('Error', 'Failed to start recording. Please try again.');
-    }
-  };
-
-  const stopRecording = async () => {
-    try {
-      await audioRecorder.stop();
-      // Set that we now have a recording ready to send
-      setAudioState(prev => ({ ...prev, hasRecording: true }));
-    } catch (error) {
-      console.error('Error stopping recording:', error);
-      Alert.alert('Error', 'Failed to stop recording.');
-    }
-  };
-
-  const sendAudio = async () => {
-    try {
-      if (!audioRecorder.uri) {
-        Alert.alert('Error', 'No recording to send.');
-        return;
-      }
-
-      setAudioState(prev => ({ ...prev, isLoading: true }));
-
-      // Convert recording to blob for API call
-      const response = await fetch(audioRecorder.uri);
-      const audioBlob = await response.blob();
-
-      // Clear the recorder to go back to zero state (this clears audioRecorder.uri)
-      await audioRecorder.prepareToRecordAsync();
-
-      // Send to backend and get response
-      const responseBlob = await WorldGenerationAPI.interact(audioBlob);
-
-      // Clean up any existing response audio URL
-      if (responseAudioSource) {
-        URL.revokeObjectURL(responseAudioSource);
-      }
-
-      // Create URL for new response audio
-      const responseUrl = URL.createObjectURL(responseBlob);
-      setResponseAudioSource(responseUrl);
-
-      setAudioState(prev => ({ 
-        ...prev, 
-        isLoading: false, 
-        hasResponse: true,
-        hasRecording: false // Reset to zero state after successful send
-      }));
-
-    } catch (error) {
-      console.error('Error sending audio:', error);
-      setAudioState(prev => ({ ...prev, isLoading: false, hasRecording: false }));
-      Alert.alert('Error', 'Failed to send audio. Please try again.');
-    }
-  };
-
-  const toggleResponseAudio = () => {
-    try {
-      if (!responsePlayer || !responseAudioSource) return;
-
-      if (playerStatus?.playing) {
-        responsePlayer.pause();
-      } else {
-        responsePlayer.play();
-      }
-    } catch (error) {
-      console.error('Error toggling audio playback:', error);
-      Alert.alert('Error', 'Failed to control audio playback.');
-    }
-  };
-
-  const handleBottomButtonPress = async () => {
-    if (recorderState.isRecording) {
-      // Recording state => stop recording, show send icon
-      await stopRecording();
-    } else if (audioState.hasRecording) {
-      // Has recording, not sent => send to backend, go back to zero state
-      await sendAudio();
-    } else {
-      // Zero state => start recording
-      await startRecording();
-    }
-  };
-
-  const getBottomButtonIcon = () => {
-    // Recording finished but not sent => show send icon
-    if (audioState.hasRecording && !recorderState.isRecording) {
-      return '>'; // Send icon
-    }
-    // Zero state or recording => show microphone
-    return '🎤'; // Microphone icon
-  };
-
-  const getBottomButtonColor = () => {
-    if (recorderState.isRecording) {
-      return '#EF4444'; // Red when recording
-    }
-    return '#8B5CF6'; // Purple default
-  };
-
-  const getStatusText = () => {
-    if (recorderState.isRecording) {
-      return 'Recording... Press the button to stop';
-    } else if (audioState.hasRecording) {
-      return 'Press send to submit your recording';
-    } else {
-      return 'Press the microphone to start recording your world description';
-    }
-  };
-
   return (
-    <View style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>World Generation Engine</Text>
-        <Text style={styles.subtitle}>Create your own adventure worlds</Text>
-        
-        {/* Response Audio Controls - Top Right */}
-        <View style={styles.responseContainer}>
-          {audioState.isLoading && (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#8B5CF6" />
-              <Text style={styles.loadingText}>Processing...</Text>
-            </View>
-          )}
-          
-          {audioState.hasResponse && (
-            <TouchableOpacity 
-              style={styles.responseButton}
-              onPress={toggleResponseAudio}
-            >
-              <Text style={styles.responseButtonText}>
-                {playerStatus?.playing ? '⏸️' : '▶️'}
+    <SafeAreaView edges={["top"]} style={layout.screen}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        {busy ? (
+          <View
+            accessibilityRole="progressbar"
+            accessibilityLabel="Creating your world"
+            style={styles.creating}
+          >
+            <ActivityIndicator color={colors.accent} />
+            <Text style={layout.title}>{title.trim()}</Text>
+            <Text style={layout.body}>Opening your world…</Text>
+          </View>
+        ) : (
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={[
+              layout.page,
+              { maxWidth: 760, paddingTop: 48, gap: 28 },
+            ]}
+          >
+            <Text style={layout.eyebrow}>NEW WORLD</Text>
+            <Text style={layout.title}>Create your world.</Text>
+            <Text style={layout.body}>
+              Describe the setting for your adventure.{"\n"}Give your story
+              somewhere to begin.
+            </Text>
+            {!!error && (
+              <Text accessibilityRole="alert" style={{ color: colors.danger }}>
+                {error}
               </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <View style={styles.placeholder}>
-          <Text style={styles.placeholderText}>🎙️</Text>
-          <Text style={styles.description}>
-            {getStatusText()}
-          </Text>
-        </View>
-      </View>
-
-      {/* Fixed Bottom Button */}
-      <View style={styles.bottomContainer}>
-        <TouchableOpacity
-          style={[styles.bottomButton, { backgroundColor: getBottomButtonColor() }]}
-          onPress={handleBottomButtonPress}
-          disabled={audioState.isLoading}
-        >
-          <Text style={styles.bottomButtonText}>
-            {getBottomButtonIcon()}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+            )}
+            <View style={{ gap: 12 }}>
+              <Text style={styles.label}>Need a little inspiration?</Text>
+              <View style={[layout.row, { flexWrap: "wrap" }]}>
+                {sparks.map((s) => (
+                  <Pressable
+                    key={s.title}
+                    accessibilityRole="button"
+                    disabled={busy}
+                    onPress={() => {
+                      setTitle(s.title);
+                      setDescription(s.description);
+                      setError("");
+                    }}
+                    style={({ pressed }) => [
+                      styles.spark,
+                      { opacity: pressed || busy ? 0.6 : 1 },
+                    ]}
+                  >
+                    <Text style={{ color: colors.accent }}>{s.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+            <View style={{ gap: 10 }}>
+              <Text style={styles.label}>Name your world</Text>
+              <TextInput
+                accessibilityLabel="World name"
+                value={title}
+                onChangeText={setTitle}
+                editable={!busy}
+                maxLength={100}
+                placeholder="Somewhere worth getting lost"
+                placeholderTextColor={colors.muted}
+                style={layout.input}
+              />
+            </View>
+            <View style={{ gap: 10 }}>
+              <Text style={styles.label}>
+                Set the scene{" "}
+                <Text style={{ color: colors.muted }}> / optional</Text>
+              </Text>
+              <TextInput
+                accessibilityLabel="World description"
+                value={description}
+                onChangeText={setDescription}
+                editable={!busy}
+                maxLength={500}
+                multiline
+                placeholder="What makes this place extraordinary? Who might you become?"
+                placeholderTextColor={colors.muted}
+                style={[
+                  layout.input,
+                  { minHeight: 160, textAlignVertical: "top", lineHeight: 26 },
+                ]}
+              />
+              <Text style={styles.count}>{description.length} / 500</Text>
+            </View>
+            <Action
+              label="Create & step inside  →"
+              disabled={!title.trim()}
+              onPress={create}
+            />
+            <Text style={[layout.body, { textAlign: "center", fontSize: 12 }]}>
+              Your world is saved when you create it.
+            </Text>
+          </ScrollView>
+        )}
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
-};
-
+}
 const styles = StyleSheet.create({
-  container: {
+  label: { color: colors.text, fontSize: 14, fontWeight: "500" },
+  spark: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  count: { color: colors.muted, fontSize: 11, textAlign: "right" },
+  creating: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 20,
+    padding: 32,
   },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#1E293B',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#64748B',
-    marginBottom: 40,
-    textAlign: 'center',
-  },
-  placeholder: {
-    alignItems: 'center',
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 40,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    maxWidth: 300,
-  },
-  placeholderText: {
-    fontSize: 48,
-    marginBottom: 20,
-  },
-  description: {
-    fontSize: 14,
-    color: '#64748B',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  responseContainer: {
-    position: 'absolute',
-    top: 60,
-    right: 20,
-    zIndex: 1,
-  },
-  loadingContainer: {
-    alignItems: 'center',
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  loadingText: {
-    marginTop: 8,
-    fontSize: 12,
-    color: '#64748B',
-  },
-  responseButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#8B5CF6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  responseButtonText: {
-    fontSize: 24,
-    color: 'white',
-  },
-  bottomContainer: {
-    position: 'absolute',
-    bottom: 40,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  bottomButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  bottomButtonText: {
-    fontSize: 32,
-    color: 'white',
-    fontWeight: 'bold',
-  },
-}); 
+});

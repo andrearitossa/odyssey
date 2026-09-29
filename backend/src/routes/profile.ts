@@ -2,7 +2,7 @@ import { createJsonResponse, createErrorResponse, parseJsonBody } from '../utils
 import { validateProfileUpdateRequest } from '../utils/validation';
 import { logRequest } from '../utils/requestLogger';
 import { handleAuthError, handleServerError, isAuthError } from '../utils/errorHandling';
-import { OAuthService, UserDbService } from '../database';
+import { UserDbService } from '../database';
 import { Env } from '../routes';
 import { User } from '../database/db-types';
 import { AuthService } from '../utils/authService';
@@ -35,7 +35,7 @@ export class ProfileRouter {
 
   async route(request: Request, user: User, ctx?: ExecutionContext): Promise<Response | null> {
     logRequest(request);
-    
+
     const url = new URL(request.url);
     const method = request.method;
     const pathname = url.pathname;
@@ -83,7 +83,7 @@ export class ProfileRouter {
       if (validationError) {
         return createErrorResponse(validationError, 400);
       }
-      
+
       // Prepare updates
       const updates: { name?: string; language?: string } = {};
       if (body.name) {
@@ -111,4 +111,4 @@ export class ProfileRouter {
   }
 }
 
- 
+

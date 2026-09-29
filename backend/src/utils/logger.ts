@@ -171,7 +171,7 @@ export class Logger {
     if (!this.logRequestDetails) return;
 
     const url = new URL(request.url);
-    const pathname = url.pathname;
+    const pathname = url.pathname.replace(/\/sessions\/[^/]+/, '/sessions/:id');
     
     // Skip logging for health checks and very frequent requests in production
     const skipLogging = [
@@ -187,7 +187,6 @@ export class Logger {
       method: request.method,
       url: pathname,
       userAgent: request.headers.get('User-Agent'),
-      ip: request.headers.get('CF-Connecting-IP'),
       country: request.headers.get('CF-IPCountry'),
       ray: request.headers.get('CF-Ray'),
       status: response?.status,

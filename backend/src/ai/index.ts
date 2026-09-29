@@ -9,3 +9,4 @@ export { GeminiProvider } from './providers/gemini';
 export type { GeminiConfig } from './providers/gemini';
 export { HuggingFaceProvider } from './providers/huggingface';
 export type { HuggingFaceConfig } from './providers/huggingface';
+export { WorkersAiProvider } from './providers/workersAi';

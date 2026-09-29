@@ -8,6 +8,7 @@
 		"dev": "wrangler dev",
 		"start": "wrangler dev",
 		"test": "vitest",
+		"test:smoke": "node tests/smoke.mjs",
 		"cf-typegen": "wrangler types"
 	},
 	"devDependencies": {

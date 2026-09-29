@@ -26,6 +26,8 @@ export interface AIProvider {
   readonly name: string;
   readonly supportedModalities: AIModality[];
   generateText(request: TextToTextRequest): Promise<TextToTextResponse>;
+  streamText?(request: TextToTextRequest): Promise<ReadableStream<Uint8Array>>;
+  readonly streamingSupported?: boolean;
 }
 
 export interface AIService {
@@ -50,4 +52,4 @@ export class UnsupportedModalityError extends Error {
     super(`Provider ${providerName} does not support modality: ${modality}`);
     this.name = 'UnsupportedModalityError';
   }
-} 
+}

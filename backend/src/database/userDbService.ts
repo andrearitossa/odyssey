@@ -9,13 +9,6 @@ export class UserDbService {
       operation: 'INIT'
     });
   }
-  async getUserByGoogleId(googleId: string): Promise<User | null> {
-    return await this.db
-      .prepare('SELECT * FROM users WHERE google_id = ?')
-      .bind(googleId)
-      .first<User>();
-  }
-
   async getUserById(userId: number): Promise<User | null> {
     return await this.db
       .prepare('SELECT * FROM users WHERE id = ?')

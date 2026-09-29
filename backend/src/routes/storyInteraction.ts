@@ -1,326 +1,216 @@
-import { createJsonResponse, createErrorResponse, parseJsonBody, corsHeaders } from '../utils/response';
-import { validateRequiredFields, generateSessionId, isValidWorldId, isValidSessionId } from '../utils/validation';
-import { logRequest } from '../utils/requestLogger';
-import { Logger } from '../utils/logger';
-import { sanitizeInput } from '../utils/sanitization';
-
-import { InteractWithStoryRequest } from './api-types';
-import { Env } from '../routes';
-import { StoryService } from '../story/storyService';
-import { AIServiceManager, GeminiProvider, HuggingFaceProvider } from '../ai';
-import { OAuthService, UserDbService, WorldDbService, SessionDbService, StoryModelDbService, ChapterDbService, MessageDbService } from '../database';
-import { Chapter } from '../database/db-types';
-import { AuthService } from '../utils/authService';
+import { AIServiceManager, GeminiProvider, HuggingFaceProvider, WorkersAiProvider } from '../ai';
+import { WorldDbService, SessionDbService } from '../database';
 import { User } from '../database/db-types';
+import { Env } from '../routes';
+import { createErrorResponse, createJsonResponse } from '../utils/response';
+import { generateSessionId, isValidSessionId, isValidWorldId } from '../utils/validation';
+import { sanitizeInput } from '../utils/sanitization';
+import { Logger } from '../utils/logger';
+import { withinRateLimit } from '../utils/rateLimit';
+
+type StoryMessage = { type: 'user' | 'narrator'; content: string; created_at: string };
 
 export class StoryInteractionRouter {
-    private oAuth: OAuthService;
-    private userDB: UserDbService;
-    private worldDB: WorldDbService;
-    private sessionDB: SessionDbService;
-    private storyModelDB: StoryModelDbService;
-    private chapterDB: ChapterDbService;
-    private messageDB: MessageDbService;
-    private aiService: AIServiceManager;
-    private storyService: StoryService;
-    private authService: AuthService;
+  private db: D1Database;
+  private worlds: WorldDbService;
+  private sessions: SessionDbService;
+  private ai = new AIServiceManager();
 
-    constructor(env: Env, authService: AuthService, userDB: UserDbService) {
-        const timer = Date.now();
-        const context = {
-            component: 'StoryInteractionRouter',
-            operation: 'INIT'
-        };
+  constructor(env: Env) {
+    this.db = env.DB;
+    this.worlds = new WorldDbService(env.DB);
+    this.sessions = new SessionDbService(env.DB);
+    if (env.AI) this.ai.setProvider(new WorkersAiProvider(env.AI, env.AI_MODEL));
+    else if (env.GEMINI_API_KEY) this.ai.setProvider(new GeminiProvider({ apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL }));
+    else if ((env.HUGGINGFACE_API_KEY || env.HUGGING_FACE_API_KEY)?.startsWith('hf_')) this.ai.setProvider(new HuggingFaceProvider({ apiKey: (env.HUGGINGFACE_API_KEY || env.HUGGING_FACE_API_KEY)! }));
+    Logger.info('Story provider', { component: 'StoryInteractionRouter', metadata: { provider: this.ai.getProviderName() } });
+  }
 
-        Logger.info('Initializing StoryInteractionRouter', context);
-
-        // Use passed-in services
-        this.authService = authService;
-        this.userDB = userDB;
-
-        // Instantiate other DB services using env.DB
-        this.oAuth = new OAuthService(env.DB);
-        this.worldDB = new WorldDbService(env.DB);
-        this.sessionDB = new SessionDbService(env.DB);
-        this.storyModelDB = new StoryModelDbService(env.DB);
-        this.chapterDB = new ChapterDbService(env.DB);
-        this.messageDB = new MessageDbService(env.DB);
-
-        this.aiService = new AIServiceManager();
-        if (env.GEMINI_API_KEY) {
-            this.aiService.setProvider(new GeminiProvider({ apiKey: env.GEMINI_API_KEY }));
-            Logger.info('AI provider configured', { ...context, metadata: { provider: 'Gemini' } });
-        } else if (env.HUGGINGFACE_API_KEY?.startsWith('hf_')) {
-            this.aiService.setProvider(new HuggingFaceProvider({ apiKey: env.HUGGINGFACE_API_KEY, model: 'mistralai/Mistral-7B-Instruct-v0.3' }));
-            Logger.info('AI provider configured', { ...context, metadata: { provider: 'HuggingFace', model: 'mistralai/Mistral-7B-Instruct-v0.3' } });
-        } else {
-            Logger.warn('No AI provider configured - service will not work properly', context);
-        }
-
-        this.storyService = new StoryService(this.aiService);
-
-        Logger.info('StoryInteractionRouter initialized successfully', { ...context, duration: Date.now() - timer });
+  async route(request: Request, user: User, ctx?: ExecutionContext): Promise<Response | null> {
+    const url = new URL(request.url);
+    if (url.pathname === '/sessions/resume' && request.method === 'GET') {
+      const worldId = url.searchParams.get('worldId');
+      if (!worldId || !isValidWorldId(worldId)) return createErrorResponse('Choose a valid world.', 400);
+      const session = await this.db.prepare('SELECT id, world_id, created_at FROM sessions WHERE user_id = ? AND world_id = ? ORDER BY updated_at DESC, rowid DESC LIMIT 1').bind(user.id, worldId).first<{id:string;world_id:string;created_at:string}>();
+      if (!session) return createJsonResponse({ session: null, messages: [] });
+      const messages = await this.db.prepare('SELECT type, content, created_at FROM messages WHERE session_id = ? ORDER BY id ASC').bind(session.id).all<StoryMessage>();
+      return createJsonResponse({ session: { sessionId: session.id, worldId: session.world_id, createdAt: session.created_at }, messages: messages.results });
     }
-
-    async route(request: Request, user: User, ctx?: ExecutionContext): Promise<Response | null> {
-        const timer = Date.now();
-        const url = new URL(request.url);
-        const method = request.method;
-        const pathname = url.pathname;
-
-        const context = {
-            component: 'StoryInteractionRouter',
-            operation: 'ROUTE',
-            metadata: { method, pathname }
-        };
-
-        Logger.debug('Processing route request', context);
-        logRequest(request);
-
-        if (pathname === '/sessions/new' && method === 'POST') {
-            Logger.info('Routing to create session', { ...context, operation: 'ROUTE_TO_CREATE_SESSION', duration: Date.now() - timer });
-            return this.createSession(request, user, ctx);
-        }
-
-        const chaptersMatch = pathname.match(/^\/sessions\/([^\/]+)\/chapters$/);
-        if (chaptersMatch && method === 'GET') {
-            const sessionId = chaptersMatch[1];
-            Logger.info('Routing to get chapters', { ...context, sessionId, operation: 'ROUTE_TO_GET_CHAPTERS', duration: Date.now() - timer });
-            return this.getChapters(request, user, sessionId);
-        }
-
-        const sessionInteractMatch = pathname.match(/^\/sessions\/([^\/]+)\/interact$/);
-        if (sessionInteractMatch && method === 'POST') {
-            const sessionId = sessionInteractMatch[1];
-            Logger.info('Routing to story interaction', { ...context, sessionId, operation: 'ROUTE_TO_INTERACT', duration: Date.now() - timer });
-            return await this.interactWithStory(request, user, sessionId, ctx);
-        }
-
-        Logger.debug('Route not handled by StoryInteractionRouter', { ...context, duration: Date.now() - timer });
-        return null;
+    if (url.pathname === '/sessions/new' && request.method === 'POST') {
+      if (!this.ai.hasProvider()) return this.unavailable();
+      if (!(await withinRateLimit(this.db, 'session-new:' + user.id, 30, 86400000))) return createErrorResponse('You have reached today’s story limit.', 429);
+      const body = await this.json(request);
+      const worldId = body && typeof body.worldId === 'string' ? body.worldId : '';
+      if (!isValidWorldId(worldId)) return createErrorResponse('Choose a valid world.', 400);
+      const world = await this.worlds.getWorldById(worldId, user.id);
+      if (!world) return createErrorResponse('World not found.', 404);
+      const session = await this.sessions.createSession(generateSessionId(), user.id, worldId);
+      return createJsonResponse({ sessionId: session.id, worldId, createdAt: session.created_at }, 201);
     }
-
-
-    private async getChaptersStructured(sessionId: string): Promise<{ history: Chapter[], current: Chapter | null, future: Chapter[] }> {
-        const [history, current, future] = await Promise.all([
-            this.chapterDB.getChaptersByStatus(sessionId, 'history'),
-            this.chapterDB.getCurrentChapter(sessionId),
-            this.chapterDB.getChaptersByStatus(sessionId, 'future')
-        ]);
-        return { history, current, future };
+    const chapters = url.pathname.match(/^\/sessions\/([^/]+)\/chapters$/);
+    if (chapters && request.method === 'GET') {
+      if (!isValidSessionId(chapters[1])) return createErrorResponse('Invalid session ID.', 400);
+      const session = await this.sessions.getSessionWithUser(chapters[1], user.id);
+      if (!session) return createErrorResponse('Session not found.', 404);
+      const result = await this.db.prepare('SELECT * FROM chapters WHERE session_id = ? ORDER BY chapter_number ASC').bind(session.id).all();
+      const items = result.results as Array<{ status: string }>;
+      return createJsonResponse({ history: items.filter(c => c.status === 'history'), current: items.find(c => c.status === 'current') ?? null, future: items.filter(c => c.status === 'future') });
     }
+    const interaction = url.pathname.match(/^\/sessions\/([^/]+)\/interact$/);
+    if (interaction && request.method === 'POST') return this.interact(request, user, interaction[1], ctx);
+    return null;
+  }
 
-    private async getChapters(request: Request, user: User, sessionId: string): Promise<Response> {
-        const context = {
-            component: 'StoryInteractionRouter',
-            operation: 'GET_CHAPTERS',
-            sessionId
-        };
-        Logger.info('Fetching chapters', context);
-
-        try {
-            if (!isValidSessionId(sessionId)) {
-                Logger.warn('Invalid session ID format', context);
-                return createErrorResponse('Invalid session ID format', 400);
-            }
-
-            const session = await this.sessionDB.getSessionWithUser(sessionId, user.id);
-            if (!session) {
-                Logger.warn('Session not found or access denied', context);
-                return createErrorResponse('Session not found or access denied', 404, 'Not Found');
-            }
-
-            const { history, current, future } = await this.getChaptersStructured(sessionId);
-
-            Logger.info('Chapters fetched successfully', { ...context, userId: user.id });
-            return createJsonResponse({ history, current, future });
-        } catch (error) {
-            Logger.error('Error fetching chapters', error, context);
-            return createErrorResponse('Failed to fetch chapters', 500);
-        }
+  private unavailable() {
+    return createErrorResponse('Story generation is unavailable. Configure a Workers AI binding or GEMINI_API_KEY.', 503, 'Service Unavailable');
+  }
+  private async json(request: Request): Promise<Record<string, unknown> | null> {
+    try {
+      const body = await request.json();
+      return body && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : null;
+    } catch { return null; }
+  }
+  private async interact(request: Request, user: User, sessionId: string, ctx?: ExecutionContext): Promise<Response> {
+    if (!isValidSessionId(sessionId)) return createErrorResponse('Invalid session ID.', 400);
+    const body = await this.json(request);
+    const message = sanitizeInput(typeof body?.message === 'string' ? body.message : '');
+    if (!message) return createErrorResponse('Write a choice to continue.', 400);
+    const requestId = body?.requestId;
+    if (requestId !== undefined && (typeof requestId !== 'string' || !/^[a-f0-9-]{36}$/i.test(requestId))) return createErrorResponse('Invalid request ID.', 400);
+    const session = await this.sessions.getSessionWithUser(sessionId, user.id);
+    if (!session) return createErrorResponse('Session not found.', 404);
+    if (requestId) {
+      const saved = await this.db.prepare('SELECT response FROM interaction_requests WHERE session_id = ? AND request_id = ?').bind(sessionId, requestId).first<{response:string}>();
+      if (saved) return createJsonResponse({ response: saved.response });
     }
-
-    private async createSession(request: Request, user: User, ctx?: ExecutionContext): Promise<Response> {
-        const context = {
-            component: 'StoryInteractionRouter',
-            operation: 'CREATE_SESSION'
-        };
-        Logger.info('Creating new session', context);
-
-        try {
-            const body = await parseJsonBody<{ worldId: string }>(request);
-            const validationError = validateRequiredFields(body, ['worldId']);
-            if (validationError) {
-                Logger.warn('Validation error for create session body', { ...context, metadata: { error: validationError } });
-                return createErrorResponse(validationError, 400);
-            }
-
-            if (!isValidWorldId(body.worldId)) {
-                Logger.warn('Invalid world ID format', context);
-                return createErrorResponse('Invalid world ID format', 400);
-            }
-
-            const world = await this.worldDB.getWorldById(body.worldId);
-            if (!world) {
-                Logger.warn('World not found', context);
-                return createErrorResponse('World not found', 404, 'Not Found');
-            }
-
-            const sessionId = generateSessionId();
-            const session = await this.sessionDB.createSession(sessionId, user.id, world.id);
-            Logger.info(`Session ${session.id} created`, { ...context, userId: user.id, metadata: { worldId: world.id } });
-
-            // --- Synchronous Story Initialization ---
+    if (!this.ai.hasProvider()) return this.unavailable();
+    if (!(await withinRateLimit(this.db, 'story-user:' + user.id, 80, 3600000))) return createErrorResponse('You have reached the hourly story limit. Come back soon.', 429);
+    const lockId = typeof requestId === 'string' ? requestId : crypto.randomUUID();
+    const now = Date.now();
+    const lock = await this.db.prepare(`INSERT INTO story_turn_locks (session_id, request_id, expires_at) VALUES (?, ?, ?)
+      ON CONFLICT(session_id) DO UPDATE SET request_id = excluded.request_id, expires_at = excluded.expires_at
+      WHERE story_turn_locks.expires_at < ? RETURNING request_id`).bind(sessionId, lockId, now + 180000, now).first<{request_id:string}>();
+    if (!lock) return createErrorResponse('A move is still unfolding. Try again in a moment.', 409, 'Conflict');
+    const unlock = () => this.db.prepare('DELETE FROM story_turn_locks WHERE session_id = ? AND request_id = ?').bind(sessionId, lockId).run();
+    if (requestId) {
+      const saved = await this.db.prepare('SELECT response FROM interaction_requests WHERE session_id = ? AND request_id = ?').bind(sessionId, requestId).first<{response:string}>();
+      if (saved) { await unlock(); return createJsonResponse({ response: saved.response }); }
+    }
+    const world = await this.worlds.getWorldById(session.world_id, user.id);
+    if (!world) { await unlock(); return createErrorResponse('World not found.', 404); }
+    const recent = await this.db.prepare('SELECT type, content, created_at FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT 8').bind(sessionId).all<StoryMessage>();
+    const modelMessage = recent.results.length === 0 && message === '-' ? 'Begin the story with an immediate situation and a choice.' : message;
+    const history = [...recent.results].reverse().filter(item => !(item.type === 'user' && item.content === '-')).map(item => ({ role: item.type === 'narrator' ? 'assistant' as const : 'user' as const, content: item.content.slice(0, 1600) }));
+    const older = recent.results.length >= 8
+      ? await this.db.prepare("SELECT content FROM messages WHERE session_id = ? AND type = 'user' ORDER BY id DESC LIMIT 20").bind(sessionId).all<{content:string}>()
+      : null;
+    const opening = recent.results.length >= 8
+      ? await this.db.prepare("SELECT content FROM messages WHERE session_id = ? AND type = 'narrator' ORDER BY id ASC LIMIT 1").bind(sessionId).first<{content:string}>()
+      : null;
+    const priorActions = older ? older.results.slice(4).reverse().map(item => item.content.slice(0, 100)).join('; ').slice(-1200) : '';
+    const system = [
+      'Narrate a fast, player-led interactive story. The player is the protagonist.',
+      'World: ' + world.title + '. ' + (world.description?.slice(0, 2400) ?? ''),
+      'Language: ' + (user.language || 'English') + '.',
+      history.length === 0 ? 'Opening: start with a concrete disruption, personal stake, and reachable goal.' : '',
+      opening ? 'Opening objective and established facts: ' + opening.content.slice(0, 600) : '',
+      priorActions ? 'Earlier player actions, in order: ' + priorActions : '',
+      'Write 35-65 words of story in at most four sentences and two short paragraphs. On later turns, begin with the concrete consequence of the player action and advance the established goal.',
+      'Preserve location, people, and objects. If an action assumes something absent, describe an attempt without inventing it; offer a grounded nearby alternative.',
+      'End with exactly three numbered action choices, each at most six words. Make the actions distinct. No Markdown, outcome spoilers, question, option list, or "Now you can" sentence in the story prose.'
+    ].filter(Boolean).join('\n');
+    const aiRequest = { messages: [{ role: 'system' as const, content: system }, ...history, { role: 'user' as const, content: modelMessage }], temperature: 0.8, maxTokens: 1400 };
+    const saveTurn = async (reply: string) => {
+      const writes = [
+        this.db.prepare("INSERT INTO messages (session_id, type, content, chapter_number) VALUES (?, 'user', ?, 1)").bind(sessionId, message),
+        this.db.prepare("INSERT INTO messages (session_id, type, content, chapter_number) VALUES (?, 'narrator', ?, 1)").bind(sessionId, reply),
+        this.db.prepare('UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(sessionId),
+      ];
+      if (requestId) writes.push(this.db.prepare('INSERT INTO interaction_requests (session_id, request_id, response) VALUES (?, ?, ?)').bind(sessionId, requestId, reply));
+      writes.push(this.db.prepare('DELETE FROM story_turn_locks WHERE session_id = ? AND request_id = ?').bind(sessionId, lockId));
+      await this.db.batch(writes);
+    };
+    if (request.headers.get('Accept')?.includes('text/event-stream') && this.ai.canStream()) {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        start: controller => {
+          const send = (value: object) => {
+            try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(value)}\n\n`)); }
+            catch { /* The reader left; still finish and save the turn. */ }
+          };
+          const work = (async () => {
             try {
-                const { storyModelData, chapters } = await this.storyService.initializeStory({ session, world, user });
-
-                await this.storyModelDB.createStoryModel(
-                    session.id,
-                    storyModelData.core_theme_moral_message,
-                    storyModelData.genre_style_voice,
-                    storyModelData.setting,
-                    storyModelData.protagonist,
-                    storyModelData.conflict_sources,
-                    storyModelData.intended_impact
-                );
-
-                await this.chapterDB.createChapter(session.id, 1, chapters.currentChapter.title, chapters.currentChapter.description, 'current');
-                
-                const chapterCreationPromises = chapters.futureChapters.map((chapter, i) => 
-                    this.chapterDB.createChapter(session.id, 2 + i, chapter.title, chapter.description, 'future')
-                );
-                await Promise.all(chapterCreationPromises);
-                
-                Logger.info(`Synchronous initialization complete for session ${session.id}`, { ...context, sessionId: session.id });
-            } catch (err) {
-                Logger.error(`Synchronous session initialization failed for ${session.id}`, err, context);
-                return createErrorResponse('Failed to initialize story content', 500);
-            }
-
-            return createJsonResponse({ sessionId: session.id, worldId: session.world_id, createdAt: session.created_at }, 201);
-        } catch (error) {
-            Logger.error('Error creating session', error, context);
-            return createErrorResponse('Failed to create session', 500);
-        }
-    }
-
-    private async interactWithStory(request: Request, user: User, sessionId: string, ctx?: ExecutionContext): Promise<Response> {
-        const timer = Date.now();
-        const context = {
-            component: 'StoryInteractionRouter',
-            operation: 'INTERACT_WITH_STORY',
-            sessionId
-        };
-
-        Logger.info('Starting story interaction', context);
-
-        try {
-            if (!isValidSessionId(sessionId)) {
-                Logger.warn('Invalid session ID format', context);
-                return createErrorResponse('Invalid session ID format', 400);
-            }
-
-            const body = await parseJsonBody<InteractWithStoryRequest>(request);
-            const validationError = validateRequiredFields(body, ['message']);
-            if (validationError) {
-                Logger.warn('Validation error for interact with story body', { ...context, metadata: { error: validationError } });
-                return createErrorResponse(validationError, 400);
-            }
-
-            const userMessage = sanitizeInput(body.message);
-            if (!userMessage) {
-                Logger.warn('User message is empty', context);
-                return createErrorResponse('Message cannot be empty', 400);
-            }
-
-            const session = await this.sessionDB.getSessionWithUser(sessionId, user.id);
-            if (!session) {
-                Logger.warn('Session not found or access denied', context);
-                return createErrorResponse('Session not found or access denied', 404, 'Not Found');
-            }
-
-            const world = await this.worldDB.getWorldById(session.world_id);
-            if (!world) {
-                Logger.warn('World not found', context);
-                return createErrorResponse('World not found', 404, 'Not Found');
-            }
-
-            // --- StoryService Orchestration ---
-            const [storyModel, allChapters, recentMessages] = await Promise.all([
-                this.storyModelDB.getStoryModelBySessionId(sessionId),
-                this.getChaptersStructured(sessionId),
-                this.messageDB.getRecentSessionMessages(sessionId, 10)
-            ]);
-
-            if (!storyModel) {
-                Logger.error('Story model not found for this session', context);
-                return createErrorResponse('Story model not found for this session', 404);
-            }
-            if (!allChapters.current) {
-                Logger.error('No active chapter found for this session', context);
-                return createErrorResponse('No active chapter found for this session', 404);
-            }
-
-            const { narratorResponse, storyOutput, shouldTransition } = await this.storyService.processUserInput(
-                storyModel,
-                allChapters,
-                recentMessages,
-                userMessage,
-                user
-            );
-
-            const handleBackgroundOperations = async () => {
-                try {
-                    const currentChapterNumber = allChapters.current!.chapter_number;
-                    await this.messageDB.createMessage(sessionId, 'user', userMessage, currentChapterNumber);
-                    const narratorMessagePromise = this.messageDB.createMessage(sessionId, 'narrator', narratorResponse, currentChapterNumber);
-
-                    if (storyOutput.modifications.currentChapterModified) {
-                        await this.chapterDB.updateChapterTitleAndDescription(
-                            allChapters.current!.id,
-                            storyOutput.currentChapter.title,
-                            storyOutput.currentChapter.description
-                        );
+              const source = await this.ai.streamText(aiRequest);
+              const reader = source.getReader();
+              const decoder = new TextDecoder();
+              let buffer = '';
+              let reply = '';
+              let timedOut = false;
+              const timeout = setTimeout(() => { timedOut = true; void reader.cancel(); }, 35000);
+              try {
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+                  let boundary: number;
+                  while ((boundary = buffer.indexOf('\n\n')) !== -1) {
+                    const event = buffer.slice(0, boundary);
+                    buffer = buffer.slice(boundary + 2);
+                    for (const line of event.split('\n')) {
+                      if (!line.startsWith('data:')) continue;
+                      const raw = line.slice(5).trim();
+                      if (raw === '[DONE]') continue;
+                      let delta = '';
+                      try { delta = JSON.parse(raw)?.choices?.[0]?.delta?.content ?? ''; } catch { /* Ignore malformed intermediary events. */ }
+                      if (typeof delta === 'string' && delta) {
+                        reply += delta;
+                        send({ delta });
+                      }
                     }
-                    if (storyOutput.modifications.futureChaptersModified || storyOutput.modifications.newChaptersAdded) {
-                        await this.chapterDB.clearFutureChapters(sessionId);
-                        for (let i = 0; i < storyOutput.futureChapters.length; i++) {
-                            const chapter = storyOutput.futureChapters[i];
-                            await this.chapterDB.createChapter(sessionId, allChapters.history.length + 2 + i, chapter.title, chapter.description, 'future');
-                        }
-                    }
-                    if (shouldTransition) {
-                        await narratorMessagePromise;
-                        await this.chapterDB.completeCurrentChapter(sessionId);
-                        await this.chapterDB.setNextChapterAsCurrent(sessionId);
-                    }
-                } catch (error) {
-                    Logger.error('Background database operations failed', error, context);
+                  }
                 }
-            };
-
-            if (ctx) {
-                ctx.waitUntil(handleBackgroundOperations());
-            } else {
-                handleBackgroundOperations();
+              } finally { clearTimeout(timeout); }
+              if (timedOut || !reply.trim()) throw new Error('Incomplete story stream');
+              await saveTurn(reply.trim());
+              send({ response: reply.trim(), done: true });
+            } catch {
+              await unlock().catch(() => {});
+              send({ error: 'The story could not continue. Try your move again.' });
+            } finally {
+              try { controller.close(); } catch { /* Reader already left. */ }
             }
-
-            Logger.info('Story interaction completed successfully', {
-                ...context,
-                userId: user.id,
-                duration: Date.now() - timer
-            });
-
-            return new Response(JSON.stringify({ response: narratorResponse }), {
-                headers: { 'Content-Type': 'application/json', ...corsHeaders },
-            });
-
-        } catch (error) {
-            Logger.error('Story interaction failed', error, {
-                ...context,
-                duration: Date.now() - timer
-            });
-            return createErrorResponse('Failed to process story interaction', 500);
-        }
+          })();
+          ctx?.waitUntil(work);
+        },
+      });
+      return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' } });
     }
+    let response: string;
+    try {
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        response = (await Promise.race([
+          this.ai.generateText(aiRequest),
+          new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error('AI timeout')), 25000); }),
+        ])).content.trim();
+      } finally { if (timeout) clearTimeout(timeout); }
+      if (!response) throw new Error('Empty story response');
+    } catch (error) {
+      await unlock();
+      Logger.error('Story generation failed', undefined, { component: 'StoryInteractionRouter', operation: 'INTERACT', sessionId, metadata: { provider: this.ai.getProviderName() } });
+      return createErrorResponse('The story could not continue. Try your move again.', 502, 'Story Unavailable');
+    }
+    try {
+      await saveTurn(response);
+    } catch (error) {
+      await unlock();
+      if (requestId) {
+        const saved = await this.db.prepare('SELECT response FROM interaction_requests WHERE session_id = ? AND request_id = ?').bind(sessionId, requestId).first<{response:string}>();
+        if (saved) return createJsonResponse({ response: saved.response });
+      }
+      Logger.error('Story save failed', error, { component: 'StoryInteractionRouter', operation: 'INTERACT', sessionId });
+      return createErrorResponse('Could not save your move. Please try again.', 500);
+    }
+    return createJsonResponse({ response });
+  }
 }

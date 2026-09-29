@@ -28,6 +28,7 @@
 			"database_id": "d0534ed9-ba2c-4cb8-a0c7-bf4a1eefb6ec"
 		}
 	],
+	"ai": { "binding": "AI", "remote": true },
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
@@ -51,25 +52,11 @@
 		"LOG_REQUEST_DETAILS": "true"
 	},
 	/**
-	 * REQUIRED SECRETS FOR OAUTH:
-	 * These must be set using 'wrangler secret put' command:
-	 * 
-	 * 1. Google OAuth Configuration:
-	 *    wrangler secret put GOOGLE_CLIENT_ID
-	 *    wrangler secret put GOOGLE_CLIENT_SECRET
-	 * 
-	 * 2. AI Service Keys (optional):
+	 * Optional AI service key for generated stories:
 	 *    wrangler secret put GEMINI_API_KEY
-	 *    wrangler secret put HUGGINGFACE_API_KEY
 	 * 
 	 * Note: Use secrets to store sensitive data.
 	 * https://developers.cloudflare.com/workers/configuration/secrets/
-	 * 
-	 * Example setup commands:
-	 * wrangler secret put GOOGLE_CLIENT_ID --env development
-	 * wrangler secret put GOOGLE_CLIENT_SECRET --env development
-	 * wrangler secret put GOOGLE_CLIENT_ID --env production  
-	 * wrangler secret put GOOGLE_CLIENT_SECRET --env production
 	 */
 	
 	/**

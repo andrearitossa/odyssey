@@ -1,68 +1,58 @@
-import React from 'react';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Ionicons } from '@expo/vector-icons';
-import { BottomTabParamList } from '../types';
-
-import { WorldGenerationScreen } from '../screens/WorldGenerationScreen';
-import { WorldSelectionScreen } from '../screens/WorldSelectionScreen';
-import { ProfileScreen } from '../screens/ProfileScreen';
-
+import React from "react";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { BottomTabParamList } from "../types";
+import { WorldGenerationScreen } from "../screens/WorldGenerationScreen";
+import { WorldSelectionScreen } from "../screens/WorldSelectionScreen";
+import { ProfileScreen } from "../screens/ProfileScreen";
+import { colors } from "../theme";
 const Tab = createBottomTabNavigator<BottomTabParamList>();
-
-export const BottomTabNavigator: React.FC = () => {
+export function BottomTabNavigator() {
   return (
     <Tab.Navigator
+      initialRouteName="WorldSelection"
       screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color, size }) => {
-          let iconName: keyof typeof Ionicons.glyphMap;
-
-          if (route.name === 'WorldGeneration') {
-            iconName = focused ? 'add-circle' : 'add-circle-outline';
-          } else if (route.name === 'WorldSelection') {
-            iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'Profile') {
-            iconName = focused ? 'person' : 'person-outline';
-          } else {
-            iconName = 'help-outline';
-          }
-
-          return <Ionicons name={iconName} size={size} color={color} />;
-        },
-        tabBarActiveTintColor: '#8B5CF6',
-        tabBarInactiveTintColor: '#64748B',
-        tabBarShowLabel: false,
-        tabBarStyle: {
-          backgroundColor: 'white',
-          borderTopWidth: 1,
-          borderTopColor: '#E2E8F0',
-          paddingBottom: 8,
-          paddingTop: 8,
-          height: 60,
-        },
         headerShown: false,
+        tabBarIcon: ({ color, size }) => (
+          <Ionicons
+            name={
+              route.name === "WorldSelection"
+                ? "planet-outline"
+                : route.name === "WorldGeneration"
+                  ? "add-circle-outline"
+                  : "person-outline"
+            }
+            color={color}
+            size={size}
+          />
+        ),
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.muted,
+        tabBarStyle: {
+          backgroundColor: colors.background,
+          borderTopColor: colors.line,
+          height: 76,
+          paddingTop: 10,
+          paddingBottom: 12,
+        },
+        tabBarLabelStyle: { fontSize: 11, marginTop: 4 },
       })}
     >
-      <Tab.Screen 
-        name="WorldGeneration" 
-        component={WorldGenerationScreen}
-        options={{
-          title: 'World Generation',
-        }}
-      />
-      <Tab.Screen 
-        name="WorldSelection" 
+      <Tab.Screen
+        name="WorldSelection"
         component={WorldSelectionScreen}
-        options={{
-          title: 'Choose Your Adventure',
-        }}
+        options={{ title: "Explore" }}
       />
-      <Tab.Screen 
-        name="Profile" 
+      <Tab.Screen
+        name="WorldGeneration"
+        component={WorldGenerationScreen}
+        options={{ title: "Create" }}
+      />
+      <Tab.Screen
+        name="Profile"
         component={ProfileScreen}
-        options={{
-          title: 'Profile',
-        }}
+        options={{ title: "You" }}
       />
     </Tab.Navigator>
   );
-}; 
+}

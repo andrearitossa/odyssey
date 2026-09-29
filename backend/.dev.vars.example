@@ -1,0 +1,3 @@
+# The Workers AI binding uses GLM-5.3-Flash by default; no AI key is needed.
+# Gemini is an optional fallback only when the AI binding is unavailable.
+GEMINI_API_KEY=

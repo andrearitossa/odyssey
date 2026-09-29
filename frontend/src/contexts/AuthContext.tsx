@@ -1,131 +1,113 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Alert } from 'react-native';
-import { GoogleTokenManager } from '../api/googleAuth';
-import { ErrorHandlingService } from '../services/ErrorHandlingService';
-
-export interface User {
-  id: number;
-  email: string;
-  name: string;
-  picture_url?: string;
-  language?: string;
-}
-
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  ReactNode,
+} from "react";
+import { AccountSession, AccountUser, accountRequest } from "../api/accounts";
+import { setGlobalAuthErrorHandler } from "../api/api";
 interface AuthContextType {
-  // Authentication state
-  user: User | null;
+  user: AccountUser | null;
   isAuthenticated: boolean;
   isAuthLoading: boolean;
-  
-  // Authentication methods
+  error: string;
   checkAuth: () => Promise<boolean>;
   signOut: () => Promise<void>;
-  handleAuthError: (error: any) => Promise<void>;
-  
-  // Navigation callback for auth errors
-  setOnAuthRequired: (callback: () => void) => void;
+  saveAccount: (
+    username: string,
+    password: string,
+    login: boolean,
+  ) => Promise<void>;
 }
-
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
-  const [onAuthRequired, setOnAuthRequired] = useState<(() => void) | null>(null);
-  
-  const errorHandler = ErrorHandlingService.getInstance();
-
-  useEffect(() => {
-    checkAuth();
-  }, []);
-
-  const checkAuth = async (): Promise<boolean> => {
-    try {
-      setIsAuthLoading(true);
-      
-      const authResult = await GoogleTokenManager.checkExistingAuth();
-      
-      if (authResult.isAuthenticated && authResult.user) {
-        setUser(authResult.user);
-        setIsAuthenticated(true);
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<AccountUser | null>(null);
+  const [isAuthLoading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const checking = useRef<Promise<boolean> | null>(null);
+  const checkAuth = useCallback(() => {
+    if (checking.current) return checking.current;
+    const task = (async () => {
+      setLoading(true);
+      setError("");
+      try {
+        let data;
+        if (await AccountSession.token()) {
+          try {
+            data = await accountRequest("me");
+          } catch (error) {
+            if ((error as { status?: number }).status !== 401) throw error;
+            await AccountSession.clear();
+          }
+        }
+        data ??= await accountRequest("guest", {});
+        await AccountSession.save(data);
+        setUser(data.user);
         return true;
-      } else {
-        setUser(null);
-        setIsAuthenticated(false);
+      } catch {
+        setError(
+          "Couldn’t connect to Odyssey. Check your connection and try again.",
+        );
         return false;
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error('Auth check failed:', error);
-      setUser(null);
-      setIsAuthenticated(false);
-      return false;
-    } finally {
-      setIsAuthLoading(false);
-    }
-  };
-
-  const signOut = async (): Promise<void> => {
-    try {
-      await GoogleTokenManager.logout();
-      setUser(null);
-      setIsAuthenticated(false);
-      
-      // Navigate to auth screen if callback is set
-      if (onAuthRequired) {
-        onAuthRequired();
-      }
-    } catch (error) {
-      console.error('Sign out failed:', error);
-      errorHandler.logError(error, 'sign_out');
-    }
-  };
-
-  const handleAuthError = async (error: any): Promise<void> => {
-    console.error('Authentication error detected:', error);
-    
-    // Clear authentication state
+    })();
+    checking.current = task;
+    void task.finally(() => {
+      checking.current = null;
+    });
+    return task;
+  }, []);
+  const signOut = useCallback(async () => {
+    await accountRequest("logout", {});
+    await AccountSession.clear();
     setUser(null);
-    setIsAuthenticated(false);
-    
-    try {
-      await GoogleTokenManager.clearAuth();
-    } catch (clearError) {
-      console.error('Failed to clear auth state:', clearError);
-    }
-
-    // Automatically navigate to auth screen
-    if (onAuthRequired) {
-      onAuthRequired();
-    }
-
-    // Log the error
-    errorHandler.logError(error, 'auth_error');
-  };
-
-  const setOnAuthRequiredCallback = (callback: () => void) => {
-    setOnAuthRequired(() => callback);
-  };
-
+    await checkAuth();
+  }, [checkAuth]);
+  const saveAccount = useCallback(
+    async (username: string, password: string, login: boolean) => {
+      const data = await accountRequest(login ? "login" : "register", {
+        username,
+        password,
+      });
+      await AccountSession.save(data);
+      setUser(data.user);
+    },
+    [],
+  );
+  useEffect(() => {
+    void checkAuth();
+  }, [checkAuth]);
+  useEffect(() => {
+    setGlobalAuthErrorHandler(async () => {
+      setError("Your session expired. Reconnect to continue.");
+      setUser(null);
+      await AccountSession.clear();
+    });
+    return () => setGlobalAuthErrorHandler(null);
+  }, []);
   return (
-    <AuthContext.Provider value={{
-      user,
-      isAuthenticated,
-      isAuthLoading,
-      checkAuth,
-      signOut,
-      handleAuthError,
-      setOnAuthRequired: setOnAuthRequiredCallback,
-    }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated: !!user,
+        isAuthLoading,
+        error,
+        checkAuth,
+        signOut,
+        saveAccount,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
-};
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-}; 
+}
+export function useAuth() {
+  const value = useContext(AuthContext);
+  if (!value) throw new Error("AuthProvider is required");
+  return value;
+}

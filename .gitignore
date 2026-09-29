@@ -8,3 +8,7 @@ node_modules
 .dev.vars
 
 package-lock.json
+.expo/
+dist/
+test-results/
+playwright-report/
