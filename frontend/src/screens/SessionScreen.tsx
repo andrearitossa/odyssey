@@ -210,7 +210,7 @@ export function SessionScreen({ route, navigation }: Props) {
                 <Pressable
                   key={index}
                   accessibilityRole="button"
-                  onPress={() => send(choiceAction(choice.text))}
+                  onPress={() => send(choice.action ?? choiceAction(choice.text))}
                   style={({ pressed }) => [
                     styles.choice,
                     {

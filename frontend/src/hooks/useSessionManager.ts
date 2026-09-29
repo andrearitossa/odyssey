@@ -144,7 +144,7 @@ export function useSessionManager() {
           let streamError: string | null = null;
           const receiveLine = (line: string) => {
             if (!line.startsWith("data:")) return;
-            let event: { delta?: unknown; response?: unknown; done?: unknown; error?: unknown };
+            let event: { delta?: unknown; response?: unknown; done?: unknown; turn?: unknown; error?: unknown };
             try {
               event = JSON.parse(line.slice(5).trim());
             } catch {
@@ -159,7 +159,7 @@ export function useSessionManager() {
               onDelta?.(scene.replace(/\n\s*1(?:[.):]\s+|\s+[-–—]\s+|\s+)[\s\S]*$/, "").trim());
             }
             if (event.done === true && typeof event.response === "string")
-              completedResponse = event.response;
+              completedResponse = event.turn ? JSON.stringify(event.turn) : event.response;
           };
           while (true) {
             const { value, done } = await reader.read();
@@ -177,8 +177,8 @@ export function useSessionManager() {
           if (completedResponse === null)
             throw new Error("Story stream ended before it was complete");
         } else {
-          const data = await handleResponse<{ response: string }>(response);
-          completedResponse = data.response;
+          const data = await handleResponse<{ response: string; turn?: unknown }>(response);
+          completedResponse = data.turn ? JSON.stringify(data.turn) : data.response;
         }
         const parsed = parseNarratorResponse(completedResponse);
         if (!parsed.length) throw new Error("Empty story response");

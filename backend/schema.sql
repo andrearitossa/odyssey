@@ -149,3 +149,9 @@ CREATE TABLE IF NOT EXISTS story_turn_locks (
   request_id TEXT NOT NULL,
   expires_at INTEGER NOT NULL
 );
+-- Only new/unopened sessions opt in. Legacy transcripts remain on the text engine.
+CREATE TABLE IF NOT EXISTS session_story_state (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id),
+  version INTEGER NOT NULL,
+  state_json TEXT NOT NULL
+);

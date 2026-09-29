@@ -31,7 +31,8 @@ export class WorkersAiProvider implements AIProvider {
       } : {
         messages: request.messages,
         temperature: request.temperature,
-        max_completion_tokens: this.model.includes('glm-5.3-flash') ? Math.min(request.maxTokens ?? 320, 320) : request.maxTokens,
+        ...(request.structured ? { response_format: { type: 'json_object' } } : {}),
+        max_completion_tokens: this.model.includes('glm-5.3-flash') ? Math.min(request.maxTokens ?? 320, request.structured ? 1800 : 320) : request.maxTokens,
         reasoning_effort: 'low',
       };
       const result = await this.binding.run(this.model as keyof AiModels, input as never) as {

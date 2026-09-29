@@ -54,10 +54,15 @@ async function setup(page: Page) {
     if (!state.stories.has(id)) state.stories.set(id, []);
     return state.stories.get(id)!;
   };
-  const stream = (response: string) =>
-    `data: ${JSON.stringify({ delta: response.slice(0, Math.ceil(response.length / 2)) })}\n` +
+  const stream = (response: string) => {
+    if (response.startsWith('{')) {
+      const turn = JSON.parse(response);
+      if (turn.format === 'story-v1') return `data: ${JSON.stringify({ response: turn.scene, turn, done: true })}\n\n`;
+    }
+    return `data: ${JSON.stringify({ delta: response.slice(0, Math.ceil(response.length / 2)) })}\n` +
     `data: ${JSON.stringify({ delta: response.slice(Math.ceil(response.length / 2)) })}\n\n` +
     `data: ${JSON.stringify({ response, done: true })}\n\n`;
+  };
   // All API traffic is intercepted: these tests never call production or AI services.
   await page.route("http://localhost:8787/**", async (route) => {
     const request = route.request();
@@ -636,4 +641,34 @@ test("web retries also accept JSON from a non-streaming backend", async ({ page 
   await expect(page.getByRole("button", { name: /Step through the door/ })).toBeVisible();
   expect(state.replayed).toBe(1);
   expect(state.calls).toHaveLength(2);
+});
+
+const structuredOpening = {
+  format: 'story-v1', scene: 'A steward blocks the gate.',
+  choices: [
+    { label: 'Ask for help', action: 'I ask the steward to help', riskCue: 'costs time' },
+    { label: 'Wait nearby', action: 'I wait beside the gate', riskCue: 'water rises' },
+    { label: 'Call out', action: 'I call out for my sibling', riskCue: 'draws attention' },
+  ],
+};
+
+test('structured turns preserve exact prose and choices without numbered-text parsing', () => {
+  const messages = parseNarratorResponse(JSON.stringify(structuredOpening));
+  expect(messages[0].text).toBe(structuredOpening.scene);
+  expect(currentChoices(messages).map(m => m.action)).toEqual(structuredOpening.choices.map(c => c.action));
+  expect(currentChoices(messages)[0].text).toBe('Ask for help — costs time');
+});
+
+test('structured choices render, survive reload, and submit the action rather than the cue', async ({ page }) => {
+  const { state, errors } = await setup(page);
+  state.openingText = JSON.stringify(structuredOpening);
+  await page.getByRole('button', { name: 'Enter The Midnight Library' }).click();
+  await expect(page.getByText('A steward blocks the gate.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ask for help — costs time' })).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: 'Continue The Midnight Library' }).click();
+  await page.getByRole('button', { name: 'Ask for help — costs time' }).click();
+  await expect(page.getByRole('button', { name: /Step through the door/ })).toBeVisible();
+  expect(state.calls).toEqual(['-', 'I ask the steward to help']);
+  expect(errors).toEqual([]);
 });

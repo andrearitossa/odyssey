@@ -4,6 +4,7 @@ export interface TextToTextRequest {
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
   temperature?: number;
   maxTokens?: number;
+  structured?: boolean;
   stopSequences?: string[];
 }
 

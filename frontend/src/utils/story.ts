@@ -5,6 +5,22 @@ export function parseNarratorResponse(
   response: string,
   timestamp = new Date(),
 ): Message[] {
+  // New turns store explicit fields; older transcripts still use numbered text.
+  if (response.trim().startsWith("{")) {
+    try {
+      const turn = JSON.parse(response);
+      if (turn?.format === "story-v1" && typeof turn.scene === "string" &&
+          Array.isArray(turn.choices) && turn.choices.length === 3 &&
+          turn.choices.every((c: any) => typeof c.label === "string" && typeof c.action === "string" && typeof c.riskCue === "string")) {
+        return [
+          { type: "narrator", text: turn.scene, timestamp },
+          ...turn.choices.map((c: { label: string; action: string; riskCue: string }, i: number): Message => ({
+            type: "choice", text: `${c.label} — ${c.riskCue}`, action: c.action, choiceNumber: i + 1, timestamp,
+          })),
+        ];
+      }
+    } catch { /* Not a structured turn; preserve legacy prose. */ }
+  }
   const lines = response.trim().split("\n");
   const choices: Message[] = [];
   let end = lines.length;

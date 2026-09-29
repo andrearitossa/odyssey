@@ -1,0 +1,13 @@
+# Titanic structured-state playtest
+
+A real 390×844 mobile-browser run exercised the local pipeline after the provider JSON-mode fix. The opening and first five actions returned HTTP 200 and added saved `story-v1` turns. Three later attempts returned 502; one retry succeeded, while both attempts at the next choice failed, ending the planned sequence before the two grounding probes. Those failures were counted as errors, not story turns. The run still verified reload and restart.
+
+The story opened on April 15 with a younger sibling missing below steerage and lifeboat six filling. The player chose to hold a place, then gave it up and returned below. The ship’s band, the groaning davit, a locked steerage gate, and water spreading from the bow made the Titanic setting concrete. A custom action to comfort a frightened child was incorporated: the boy clutched the player’s sleeve and pointed toward a moving figure. Following it revealed a girl in a listing third-class cabin who reported that a girl named Áine had gone toward the bow with an old woman. This is a memorable lead, though the sequence briefly shifts focus from the player’s sibling to the boy’s sister. The follow-figure response also has the player scoop up the boy even though that action was not chosen.
+
+- **Quality: 3/5.** Atmospheric prose and a readable through-line from the sibling to the bow. The character response adds a useful lead, with a small action-continuity slip. Gold-watch and phone grounding probes were not reached, so resistance to invented facts is untested.
+- **Engagement: 4/5.** The player faces clear costs at each step—keep a boat place or risk it to search—and the child interaction adds care and a new lead. The ship’s countdown maintains pace, though the failed action interrupted it.
+- **Coolness: 4/5.** Strong Titanic-specific moments include abandoning a nearly lowered lifeboat, running into knee-deep steerage water, and finding the second child in a listing cabin while the ship’s band plays.
+
+The run made 10 interaction attempts: median latency **9.2 s**, maximum **25.7 s**. Seven returned 200 and three returned 502. Every successful fresh opening or continuation was saved in `story-v1` format. Reload restored the same session, exact messages, and a visible choice; restart created a new session with one opening turn. No browser page errors were recorded.
+
+Evidence: [`titanic-post-fix.json`](/tmp/odyssey-state-playtest/titanic-post-fix.json). Pre-fix evidence is preserved at [`titanic-pre-fix.json`](/tmp/odyssey-state-playtest/titanic-pre-fix.json). The supplied runner’s ambiguous progressbar selector was corrected to target “Writing your story” in `/tmp/odyssey-state-playtest/runner.cjs`.

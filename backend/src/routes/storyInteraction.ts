@@ -8,6 +8,8 @@ import { sanitizeInput } from '../utils/sanitization';
 import { Logger } from '../utils/logger';
 import { withinRateLimit } from '../utils/rateLimit';
 
+import { initialStoryState, structuredStoryPrompt, validateStoryTurn, readStoredTurn, renderTurn, StoryState, InvalidStoryTurn } from '../story/state';
+
 type StoryMessage = { type: 'user' | 'narrator'; content: string; created_at: string };
 
 export class StoryInteractionRouter {
@@ -61,13 +63,15 @@ export class StoryInteractionRouter {
     return null;
   }
 
-  private completedResponse(request: Request, response: string) {
+  private completedResponse(request: Request, stored: string) {
+    const turn = readStoredTurn(stored);
+    const payload = turn ? { response: renderTurn(turn), turn } : { response: stored };
     if (request.headers.get('Accept')?.includes('text/event-stream')) {
-      return new Response(`data: ${JSON.stringify({ response, done: true })}\n\n`, {
+      return new Response(`data: ${JSON.stringify({ ...payload, done: true })}\n\n`, {
         headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' },
       });
     }
-    return createJsonResponse({ response });
+    return createJsonResponse(payload);
   }
   private unavailable() {
     return createErrorResponse('Story generation is unavailable. Configure a Workers AI binding or GEMINI_API_KEY.', 503, 'Service Unavailable');
@@ -110,19 +114,27 @@ export class StoryInteractionRouter {
       const world = await this.worlds.getWorldById(session.world_id, user.id);
       if (!world) { await unlock(); return createErrorResponse('World not found.', 404); }
       const recent = await this.db.prepare('SELECT type, content, created_at FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT 8').bind(sessionId).all<StoryMessage>();
+      const savedState = await this.db.prepare('SELECT version, state_json FROM session_story_state WHERE session_id = ?').bind(sessionId).first<{version:number;state_json:string}>();
+      const sceneState: StoryState | null = savedState ? JSON.parse(savedState.state_json) : recent.results.length === 0 ? initialStoryState(world.id) : null;
+      if (sceneState && savedState && sceneState.version !== savedState.version) throw new Error('Invalid saved state version');
       const modelMessage = recent.results.length === 0 && message === '-' ? 'Begin the story with an immediate situation and a choice.' : message;
-      const history = [...recent.results].reverse().filter(item => !(item.type === 'user' && item.content === '-')).map(item => ({ role: item.type === 'narrator' ? 'assistant' as const : 'user' as const, content: item.content.slice(0, 1600) }));
+      const history = [...recent.results].reverse().filter(item => !(item.type === 'user' && item.content === '-')).map(item => ({ role: item.type === 'narrator' ? 'assistant' as const : 'user' as const, content: (readStoredTurn(item.content) ? renderTurn(readStoredTurn(item.content)!) : item.content).slice(0, 1600) }));
       // Keep confirmed outcomes, never an action-only summary: rejected premises
       // in user input are not facts. Include the opening plus recent older scenes.
-      const earlier = recent.results.length >= 8
+      const earlier = !sceneState && recent.results.length >= 8
         ? await this.db.prepare("SELECT content FROM messages WHERE session_id = ? AND type = 'narrator' ORDER BY id DESC LIMIT 8 OFFSET 4").bind(sessionId).all<{content:string}>()
         : null;
-      const opening = recent.results.length >= 8
+      const opening = !sceneState && recent.results.length >= 8
         ? await this.db.prepare("SELECT content FROM messages WHERE session_id = ? AND type = 'narrator' ORDER BY id ASC LIMIT 1").bind(sessionId).first<{content:string}>()
         : null;
       const narrativeOnly = (text: string) => text.split(/\n\s*1(?:[.):]\s+|\s+[-–—]\s+|\s+)/)[0].trim();
       const priorOutcomes = earlier?.results.slice().reverse().map(item => narrativeOnly(item.content).slice(0, 180)).join('\n') ?? '';
-      const system = [
+      const system = sceneState ? [
+        'Narrate a compact, player-led interactive story.',
+        'World: ' + world.title + '. ' + (world.description?.slice(0, 2400) ?? ''),
+        'Language: ' + (user.language || 'English') + '.',
+        structuredStoryPrompt(sceneState, world.id),
+      ].join('\n') : [
         'Narrate a fast, player-led interactive story. The player is the protagonist.',
         'World: ' + world.title + '. ' + (world.description?.slice(0, 2400) ?? ''),
         'Language: ' + (user.language || 'English') + '.',
@@ -134,22 +146,33 @@ export class StoryInteractionRouter {
         'Keep the central dilemma alive. Make successes and costs matter. Do not repeat completed actions, invent convenient tools, or contradict earlier outcomes. Match the world’s genre.',
         'End with exactly three distinct numbered choices on separate lines: "1. Action — risk or cost cue". Actions use at most six words; cues at most four. No Markdown, outcome spoilers, question, or "Now you can" prose.'
       ].filter(Boolean).join('\n');
-      const aiRequest = { messages: [{ role: 'system' as const, content: system }, ...history, { role: 'user' as const, content: modelMessage }], temperature: 0.8, maxTokens: 1400 };
-      const saveTurn = async (reply: string) => {
+      const aiRequest = { messages: [{ role: 'system' as const, content: system }, ...history, { role: 'user' as const, content: modelMessage }], temperature: 0.8, maxTokens: sceneState ? 1800 : 1400, structured: Boolean(sceneState) };
+      const saveTurn = async (reply: string, nextState?: StoryState) => {
         // Every write is fenced by attempt ownership. D1 executes the batch
         // atomically, so an expired worker cannot append after a retry takes over.
-        const ownsLease = 'EXISTS (SELECT 1 FROM story_turn_locks WHERE session_id = ? AND request_id = ?)';
+        // State version and lease ownership are tested inside the atomic batch.
+        // The version is a server-validated integer, never model-provided SQL.
+        const expectedVersion = savedState?.version;
+        if (expectedVersion !== undefined && !Number.isSafeInteger(expectedVersion)) throw new Error('Invalid state version');
+        const versionGuard = sceneState ? (expectedVersion === undefined
+          ? ' AND NOT EXISTS (SELECT 1 FROM session_story_state WHERE session_id = story_turn_locks.session_id)'
+          : ` AND EXISTS (SELECT 1 FROM session_story_state WHERE session_id = story_turn_locks.session_id AND version = ${expectedVersion})`) : '';
+        const ownsLease = `EXISTS (SELECT 1 FROM story_turn_locks WHERE session_id = ? AND request_id = ?${versionGuard})`;
         const writes = [
           this.db.prepare(`INSERT INTO messages (session_id, type, content, chapter_number) SELECT ?, 'user', ?, 1 WHERE ${ownsLease}`).bind(sessionId, message, sessionId, lockId),
           this.db.prepare(`INSERT INTO messages (session_id, type, content, chapter_number) SELECT ?, 'narrator', ?, 1 WHERE ${ownsLease}`).bind(sessionId, reply, sessionId, lockId),
           this.db.prepare(`UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ? AND ${ownsLease}`).bind(sessionId, sessionId, lockId),
         ];
         if (requestId) writes.push(this.db.prepare(`INSERT INTO interaction_requests (session_id, request_id, response) SELECT ?, ?, ? WHERE ${ownsLease}`).bind(sessionId, requestId, reply, sessionId, lockId));
+        if (nextState) writes.push(this.db.prepare(`INSERT INTO session_story_state (session_id, version, state_json)
+          SELECT ?, ?, ? WHERE ${ownsLease}
+          ON CONFLICT(session_id) DO UPDATE SET version = excluded.version, state_json = excluded.state_json`)
+          .bind(sessionId, nextState.version, JSON.stringify(nextState), sessionId, lockId));
         writes.push(this.db.prepare('DELETE FROM story_turn_locks WHERE session_id = ? AND request_id = ?').bind(sessionId, lockId));
         const results = await this.db.batch(writes);
         if (!results[0].meta.changes) throw new Error('Story turn lease was replaced');
       };
-      if (request.headers.get('Accept')?.includes('text/event-stream') && this.ai.canStream()) {
+      if (!sceneState && request.headers.get('Accept')?.includes('text/event-stream') && this.ai.canStream()) {
         const encoder = new TextEncoder();
         const stream = new ReadableStream<Uint8Array>({
           start: controller => {
@@ -205,6 +228,7 @@ export class StoryInteractionRouter {
         return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' } });
       }
       let response: string;
+      let nextState: StoryState | undefined;
       try {
         let timeout: ReturnType<typeof setTimeout> | undefined;
         try {
@@ -214,13 +238,18 @@ export class StoryInteractionRouter {
           ])).content.trim();
         } finally { if (timeout) clearTimeout(timeout); }
         if (!response) throw new Error('Empty story response');
+        if (sceneState) {
+          const validated = validateStoryTurn(response, sceneState);
+          nextState = validated.state;
+          response = JSON.stringify(validated.turn);
+        }
       } catch (error) {
         await unlock();
-        Logger.error('Story generation failed', undefined, { component: 'StoryInteractionRouter', operation: 'INTERACT', sessionId, metadata: { provider: this.ai.getProviderName() } });
+        Logger.error('Story generation failed', undefined, { component: 'StoryInteractionRouter', operation: 'INTERACT', sessionId, metadata: { provider: this.ai.getProviderName(), invalidTurn: error instanceof InvalidStoryTurn, reason: error instanceof InvalidStoryTurn ? error.message : undefined } });
         return createErrorResponse('The story could not continue. Try your move again.', 502, 'Story Unavailable');
       }
       try {
-        await saveTurn(response);
+        await saveTurn(response, nextState);
       } catch (error) {
         await unlock();
         if (requestId) {

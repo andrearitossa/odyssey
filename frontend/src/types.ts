@@ -15,6 +15,7 @@ export interface Message {
   type: "user" | "narrator" | "choice";
   text: string;
   timestamp?: Date;
+  action?: string; // Structured choice action, separate from its displayed cost cue
   choiceNumber?: number; // For choice messages
 }
 
