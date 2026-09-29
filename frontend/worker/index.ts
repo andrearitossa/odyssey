@@ -136,7 +136,13 @@ export default {
     const requestTimer = createTimer();
     const requestId = crypto.randomUUID().substring(0, 8);
     const url = new URL(request.url);
-    
+
+    if (url.hostname === 'www.odissea.dev') {
+      url.hostname = 'odissea.dev';
+      url.protocol = 'https:';
+      return Response.redirect(url.toString(), 308);
+    }
+
     // Log all incoming requests
     FrontendLogger.logRequest(request, undefined, {
       requestId,
@@ -363,4 +369,4 @@ export default {
       );
     }
   },
-} satisfies ExportedHandler; 
+} satisfies ExportedHandler;
