@@ -13,7 +13,7 @@ export class HealthRouter {
 
     // Health check
     if (pathname === '/health' && method === 'GET') {
-      const provider = this.env.GEMINI_API_KEY ? 'gemini' : this.env.AI ? 'workers-ai' : (this.env.HUGGINGFACE_API_KEY || this.env.HUGGING_FACE_API_KEY) ? 'huggingface' : null;
+      const provider = this.env.AI ? 'workers-ai' : this.env.GEMINI_API_KEY ? 'gemini' : (this.env.HUGGINGFACE_API_KEY || this.env.HUGGING_FACE_API_KEY) ? 'huggingface' : null;
       try {
         await this.env.DB.prepare('SELECT 1').first();
         return createJsonResponse({ status: 'healthy', database: 'available', aiConfigured: Boolean(provider), provider, timestamp: new Date().toISOString() });
