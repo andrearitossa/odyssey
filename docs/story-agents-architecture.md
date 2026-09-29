@@ -1,35 +1,30 @@
-# Story engine
+# Story pipeline
 
-Each new story turn uses **one narrator inference**. There is no interpreter, critic, or automatic model repair call.
+Every interaction uses one narrator call. Its inputs are the original world description, the session's current free-form memory, the last four dialogue turns and the player's action.
 
-1. Authenticate and replay an already committed request if present.
-2. Read versioned scene state and the last four dialogue turns. Include the world's short canon/style brief.
-3. Generate one JSON response: scene, three choices, ordered proposed changes and elapsed minutes. The current Workers AI GLM provider uses JSON output mode as well as the prompt; code still validates the result.
-4. Validate references, access, transfers, conditions, discoveries, goal updates and elapsed time in code. Apply changes to a copy; reject invalid output without saving or displaying it.
-5. Atomically save the state/version, structured narrator message, player action and request receipt, conditional on lease ownership and the expected state version.
-6. Return the approved scene and choices. The frontend displays risk cues separately from the action submitted when tapped.
+The narrator returns ordinary prose and three numbered choices with risk/cost cues. It may append a private `<session_memory>...</session_memory>` note, freely choosing what to remember. A valid note replaces that session's previous note. There are no required memory fields, entity IDs, state operations, world-specific rules or semantic rejection checks.
 
-New turns are buffered until validation. JSON clients receive `response` (readable text) plus `turn` (the structured scene and choices). SSE clients receive one completed event with the same fields. No unchecked JSON or partial fiction is shown. The database stores the public turn envelope in narrator message content, so resume/replay retain structured choices.
+Memory starts from the world's description on the first interaction. Existing sessions without a memory row use the same initialization plus their recent transcript. Each session drifts independently; the original world is not modified. Restart creates a new session and starts again from the world description.
 
-`backend/src/story/state.ts` owns the compact state, four curated initial states/style briefs, prompt and validator. `backend/src/routes/storyInteraction.ts` handles inference, transport and atomic persistence. State lives in `session_story_state` and retains important entities even after they leave recent dialogue. Facts are append-only; claims stay separate. State has bounded capacities (100 entities, 40 facts, 12 goals, 12 recent claims); old transcript messages remain saved.
+## Output and persistence
 
-Existing sessions with narration but no state row continue through the legacy text engine. New/unopened sessions use the structured engine; restart creates a new session. The frontend supports both formats. No automatic conversion of old narration into trusted state is performed.
+Streaming narration is restored. The optional memory footer is withheld from streamed text, final responses, saved narrator messages and replay receipts. Missing, empty, oversized or incomplete memory retains the previous descriptor without rejecting the story. Notes are prompted to stay under 200 words and accepted up to 6,000 characters; their contents otherwise have no schema.
+
+The story, memory and replay receipt are saved in one atomic batch protected by the existing turn lease. Retries replay committed responses without another inference; failed provider requests release the lease. There is no critic, extractor or repair call. Providers without streaming use the same prompt and footer parser with a completed response.
+
+New turns use the existing numbered-choice frontend parser. Previously saved `story-v1` messages still render and replay; the old state table is no longer read or updated.
 
 ## Local setup
 
-Apply the additive migration before running this code against an existing database:
-
 ```sh
 cd backend
-./node_modules/.bin/wrangler d1 execute odissey-db --local --file migrations/0003_story_state.sql
+./node_modules/.bin/wrangler d1 execute odissey-db --local --file migrations/0004_story_memory.sql
 ```
 
-The schema is also included in `backend/schema.sql` for fresh databases. Apply migration `0003_story_state.sql` to a deployment's database before deploying the backend there; this implementation does not deploy or mutate a remote database.
+Fresh databases include the table in `schema.sql`. Earlier migrations remain intact for migration history. This change does not deploy anything remotely.
 
-Validation: `npm run test:story --prefix backend`, `npm run build --prefix backend`, `npm run typecheck --prefix frontend`, and the structured/retry/resume Playwright regressions.
+## Limits and checks
 
-## Limits
+This is narrative memory, not a source of verified truth. The narrator can still invent or forget details, including in its own memory. The prompt treats player input as an attempt and asks memory to reflect actual outcomes, but there is no guarantee of grounding. An incorrectly formatted footer may not be recognized; the exact marker is the output convention.
 
-Checks enforce declared state changes, not the meaning of every prose sentence. A narrator may still invent an undeclared prop or propose a narratively unearned discovery. Introductions must be explicit and cannot put new items directly into inventory, but code cannot prove that an introduction is justified. That is a deliberate limit of this one-call design. Legacy stories retain the older behavior until restarted.
-
-JSON mode is not schema enforcement. Live tests still encountered invalid state proposals and provider failures; these reject the turn and preserve the last saved scene. There is no automatic repair inference. Bounded state also means a sufficiently long story can reach capacity and have further additions rejected; automatic compaction is not implemented.
+Tests cover one-call persistence, replay, session isolation, missing/malformed memory fallback, atomic rollback, and hiding the footer across streamed character boundaries. Run `npm run test:story --prefix backend`, backend build, frontend typecheck and the existing interaction regressions.

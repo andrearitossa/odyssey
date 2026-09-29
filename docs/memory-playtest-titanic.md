@@ -1,0 +1,9 @@
+# Titanic mobile memory playtest
+
+**Run:** 2026-09-29, real mobile-sized browser (390×844), live localhost app and backend. Eight actions plus opening and restart; no mocks. **Scores (1–5):** quality 4, engagement 5, coolness 4.
+
+The story stayed gripping and built useful continuity. Nora remained the missing sister; a rescued child became Aggie, and her red-ribbon clue correctly identified Nora. Aggie stayed with the narrator through the flooded-corridor scene. When I invented a gold watch, the steward answered, “The watch can drown. The girl can't.” When I invented a phone and cabin, the narrator corrected me: “You have no phone. No cabin of your own even.” The phone probe was rejected. The watch probe is ambiguous: the narrator repeats the invented claim and uses it to recruit the steward, without establishing that the watch physically exists or explicitly refusing it. This is not a clean grounding pass, and continuity cannot be attributed to memory alone. One small mismatch: the officer called the narrator “one man” despite no gender being established.
+
+All eight actions succeeded on their first in-app attempt: each response was HTTP 200, saved-turn count rose from 2 through 9, and there were no alerts or backend/driver errors. Action generation took 4.2–26.3 seconds (median 7.4s); the opening took 8.1s and restart 4.8s. The three slowest turns took 26.3s, 23.3s, and 21.9s. Reload returned the same session and messages with the final choice visible. Restart created a new session with one opening turn.
+
+The initial driver attempt saved an opening (23.5s) but stopped before action one because its selector expected structured-choice em dashes while the plain numbered story rendered choices with arrows. This was a test-driver mismatch, not an app request failure; after correcting the selector, the complete run above succeeded. No in-app retries were needed.

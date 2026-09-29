@@ -15,7 +15,7 @@ export class WorkersAiProvider implements AIProvider {
       messages: request.messages,
       stream: true,
       reasoning_effort: 'low',
-      max_completion_tokens: Math.min(request.maxTokens ?? 320, 320),
+      max_completion_tokens: Math.min(request.maxTokens ?? 320, 900),
       temperature: request.temperature,
     } as never);
     return stream as ReadableStream<Uint8Array>;
@@ -31,8 +31,7 @@ export class WorkersAiProvider implements AIProvider {
       } : {
         messages: request.messages,
         temperature: request.temperature,
-        ...(request.structured ? { response_format: { type: 'json_object' } } : {}),
-        max_completion_tokens: this.model.includes('glm-5.3-flash') ? Math.min(request.maxTokens ?? 320, request.structured ? 1800 : 320) : request.maxTokens,
+        max_completion_tokens: this.model.includes('glm-5.3-flash') ? Math.min(request.maxTokens ?? 320, 900) : request.maxTokens,
         reasoning_effort: 'low',
       };
       const result = await this.binding.run(this.model as keyof AiModels, input as never) as {

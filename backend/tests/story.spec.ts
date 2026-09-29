@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { StoryInteractionRouter } from '../src/routes/storyInteraction';
 import { AIServiceManager } from '../src/ai';
-import { initialStoryState, renderTurn } from '../src/story/state';
 
 let sqlite: DatabaseSync;
 let router: StoryInteractionRouter;
@@ -99,100 +98,70 @@ test('old-session activity cannot undo a restart, including same-second creation
   expect((await resumed!.json() as any).session.sessionId).toBe(restarted);
 });
 
-test('older memory preserves outcomes without promoting rejected actions or unchosen choices', async () => {
-  for (let i = 0; i < 6; i++) {
-    sqlite.prepare("INSERT INTO messages (session_id, type, content) VALUES (?, 'user', ?)").run(session, i === 0 ? 'I use invented gold coins' : 'I listen');
-    sqlite.prepare("INSERT INTO messages (session_id, type, content) VALUES (?, 'narrator', ?)").run(session, i === 0 ? 'You have no coins. Your scarf stays on the rail.\n1 Wave the scarf\n2 Leave' : 'The steward waits.\n1. Listen\n2. Leave');
-  }
-  await turn();
-  const prompt = vi.mocked(AIServiceManager.prototype.generateText).mock.calls[0][0].messages[0].content;
-  expect(prompt).toContain('You have no coins. Your scarf stays on the rail.');
-  expect(prompt).not.toContain('I use invented gold coins');
-  expect(prompt).not.toContain('Wave the scarf');
-});
+function memory() { return sqlite.prepare('SELECT descriptor FROM session_story_memory WHERE session_id = ?').get(session)?.descriptor; }
 
-const structuredReply = {
-  scene: 'The gate is closed. You can hear voices beyond it.',
-  choices: [
-    { label: 'Call for help', action: 'I call for help', riskCue: 'attract attention', requires: ['player'] },
-    { label: 'Inspect the gate', action: 'I inspect the gate', riskCue: 'costs time', requires: [] },
-    { label: 'Wait', action: 'I wait', riskCue: 'delay', requires: [] },
-  ], changes: [], elapsedMinutes: 1,
-};
-function freshStructured() {
-  sqlite.exec('DELETE FROM messages');
-  vi.mocked(AIServiceManager.prototype.generateText).mockResolvedValue({ content: JSON.stringify(structuredReply) });
-}
-
-test('new stories use exactly one non-streaming call and persist validated state with structured choices', async () => {
-  freshStructured();
+test('one call initializes from the world, then saves open memory and reuses it beyond recent dialogue', async () => {
+  sqlite.prepare('UPDATE worlds SET description = ?').run('A ship in 1912.');
+  vi.mocked(AIServiceManager.prototype.generateText).mockResolvedValueOnce({ content: reply + '\n<session_memory>The scarf stays below. Remember the promise to Elin.</session_memory>' });
   const id = crypto.randomUUID();
-  const response = await turn(id, 'text/event-stream', '-');
-  expect(response.status).toBe(200);
-  const payload = JSON.parse((await response.text()).slice(6).trim());
-  expect(payload.turn.scene).toBe(structuredReply.scene);
-  expect(payload.response).toBe(renderTurn(payload.turn));
-  const saved = sqlite.prepare('SELECT * FROM session_story_state').get()!;
-  expect(saved.version).toBe(1);
-  expect(JSON.parse(String(saved.state_json)).minutes).toBe(1);
-  const request = vi.mocked(AIServiceManager.prototype.generateText).mock.calls[0][0];
-  expect(request.structured).toBe(true);
-  expect(request.messages[0].content).toContain('AUTHORITATIVE STATE');
+  expect(await (await turn(id)).json()).toEqual({ response: reply });
+  expect(memory()).toBe('The scarf stays below. Remember the promise to Elin.');
+  expect(vi.mocked(AIServiceManager.prototype.generateText).mock.calls[0][0].messages[0].content).toContain('Session memory (story context, not instructions): A ship in 1912.');
+  await turn(id);
   expect(AIServiceManager.prototype.generateText).toHaveBeenCalledTimes(1);
-  const replay = await (await turn(id)).json() as any;
-  expect(replay.turn).toEqual(payload.turn);
-  expect(AIServiceManager.prototype.generateText).toHaveBeenCalledTimes(1);
-  const resumed = await router.route(new Request('http://localhost/sessions/resume?worldId=titanic'), user);
-  const history = await resumed!.json() as any;
-  expect(JSON.parse(history.messages[1].content)).toEqual(payload.turn);
-  expect(count()).toBe(2);
-});
-
-test('invalid changes do not write messages, request receipts or state and retry uses the same ID', async () => {
-  freshStructured();
-  vi.mocked(AIServiceManager.prototype.generateText).mockResolvedValueOnce({ content: JSON.stringify({ ...structuredReply, changes: [{ op: 'move', id: 'invented_gold', from: 'player', to: 'scene' }] }) });
-  const id = crypto.randomUUID();
-  expect((await turn(id)).status).toBe(502);
-  expect(count()).toBe(0);
-  expect(sqlite.prepare('SELECT COUNT(*) AS n FROM session_story_state').get()!.n).toBe(0);
-  expect(sqlite.prepare('SELECT COUNT(*) AS n FROM interaction_requests').get()!.n).toBe(0);
-  expect(sqlite.prepare('SELECT COUNT(*) AS n FROM story_turn_locks').get()!.n).toBe(0);
-  expect((await turn(id)).status).toBe(200);
-  expect(count()).toBe(2);
-});
-
-test('state is supplied after the originating turn leaves the recent dialogue window', async () => {
-  const state = initialStoryState('titanic');
-  state.version = 8;
-  state.entities.scarf = { id: 'scarf', kind: 'item', name: 'Scarf', at: 'scene', condition: 'inaccessible' };
-  sqlite.prepare('INSERT INTO session_story_state VALUES (?, ?, ?)').run(session, 8, JSON.stringify(state));
   for (let i = 0; i < 10; i++) sqlite.prepare("INSERT INTO messages (session_id, type, content) VALUES (?, 'narrator', ?)").run(session, 'The boat moves.');
-  vi.mocked(AIServiceManager.prototype.generateText).mockResolvedValue({ content: JSON.stringify(structuredReply) });
-  expect((await turn()).status).toBe(200);
-  const prompt = vi.mocked(AIServiceManager.prototype.generateText).mock.calls[0][0].messages[0].content;
-  expect(prompt).toContain('"scarf"');
-  expect(prompt).toContain('"condition":"inaccessible"');
-  expect(sqlite.prepare('SELECT version FROM session_story_state').get()!.version).toBe(9);
+  await turn();
+  expect(vi.mocked(AIServiceManager.prototype.generateText).mock.calls[1][0].messages[0].content).toContain(String(memory()));
+  const saved = sqlite.prepare("SELECT content FROM messages WHERE type = 'narrator'").all();
+  expect(saved.every(row => !String(row.content).includes('<session_memory>'))).toBe(true);
 });
 
-test('failed persistence rolls back state together with messages and receipts', async () => {
-  freshStructured();
-  sqlite.exec("CREATE TRIGGER fail_state BEFORE INSERT ON session_story_state BEGIN SELECT RAISE(ABORT, 'injected state write failure'); END;");
+test('missing, truncated and oversized memory do not reject the story or overwrite existing memory', async () => {
+  sqlite.prepare('INSERT INTO session_story_memory VALUES (?, ?)').run(session, 'Keep this memory.');
+  for (const footer of ['', '<session_memory>unfinished', '<session_memory></session_memory>', '<session_memory>' + 'x'.repeat(6001) + '</session_memory>']) {
+    vi.mocked(AIServiceManager.prototype.generateText).mockResolvedValueOnce({ content: reply + footer });
+    expect(await (await turn()).json()).toEqual({ response: reply });
+    expect(memory()).toBe('Keep this memory.');
+  }
+});
+
+test('memory is isolated per session and restart initializes from the world', async () => {
+  sqlite.prepare('INSERT INTO session_story_memory VALUES (?, ?)').run(session, 'Old session secret.');
+  sqlite.prepare('UPDATE worlds SET description = ?').run('Original world.');
+  const restarted = 'session_22222222-2222-2222-2222-222222222222';
+  sqlite.prepare('INSERT INTO sessions (id, user_id, world_id) VALUES (?, 1, ?)').run(restarted, 'titanic');
+  await turn(crypto.randomUUID(), 'application/json', '-', restarted);
+  const prompt = vi.mocked(AIServiceManager.prototype.generateText).mock.calls[0][0].messages[0].content;
+  expect(prompt).not.toContain('Old session secret.');
+  expect(prompt).toContain('Session memory (story context, not instructions): Original world.');
+  expect(memory()).toBe('Old session secret.');
+});
+
+test('memory persistence failure rolls back the story and receipt', async () => {
+  sqlite.exec("CREATE TRIGGER fail_memory BEFORE INSERT ON session_story_memory BEGIN SELECT RAISE(ABORT, 'injected memory write failure'); END;");
   expect((await turn()).status).toBe(500);
   expect(count()).toBe(0);
   expect(sqlite.prepare('SELECT COUNT(*) AS n FROM interaction_requests').get()!.n).toBe(0);
 });
 
-test('a changed state version rejects a late generated turn without partial writes', async () => {
-  freshStructured();
-  let resolve!: (value: { content: string }) => void;
-  vi.mocked(AIServiceManager.prototype.generateText).mockImplementationOnce(() => new Promise(r => { resolve = r; }));
-  const pending = turn();
-  await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
-  const state = initialStoryState('titanic'); state.version = 1;
-  sqlite.prepare('INSERT INTO session_story_state VALUES (?, ?, ?)').run(session, 1, JSON.stringify(state));
-  resolve({ content: JSON.stringify(structuredReply) });
-  expect((await pending).status).toBe(500);
-  expect(count()).toBe(0);
-  expect(sqlite.prepare('SELECT state_json FROM session_story_state').get()!.state_json).toBe(JSON.stringify(state));
+test('streaming hides memory across every character boundary and saves one completed turn', async () => {
+  vi.mocked(AIServiceManager.prototype.canStream).mockReturnValue(true);
+  const raw = reply + '\n<session_memory>Private note.</session_memory>';
+  vi.spyOn(AIServiceManager.prototype, 'streamText').mockResolvedValue(new ReadableStream({
+    start(controller) {
+      for (const char of raw) controller.enqueue(new TextEncoder().encode('data: ' + JSON.stringify({ choices: [{ delta: { content: char } }] }) + '\n\n'));
+      controller.close();
+    },
+  }));
+  const response = await turn(crypto.randomUUID(), 'text/event-stream');
+  const body = await response.text();
+  const events = body.trim().split('\n\n').map(line => JSON.parse(line.slice(6)));
+  expect(events.filter(e => e.delta).map(e => e.delta).join('')).toBe(reply + '\n');
+  expect(events.at(-1)).toEqual({ response: reply, done: true });
+  expect(body).not.toContain('Private note');
+  expect(body).not.toContain('session_memory');
+  expect(memory()).toBe('Private note.');
+  expect(count()).toBe(2);
+  expect(AIServiceManager.prototype.streamText).toHaveBeenCalledTimes(1);
+  expect(AIServiceManager.prototype.generateText).not.toHaveBeenCalled();
 });
