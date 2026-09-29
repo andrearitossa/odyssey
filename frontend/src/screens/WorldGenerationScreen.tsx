@@ -27,19 +27,19 @@ const sparks = [
     label: "✧  A little magic",
     title: "The Midnight Library",
     description:
-      "A hidden library opens only at midnight. Every book is a door into a forgotten world, and tonight one of them is calling your name.",
+      "A hidden library where books can open doors into other worlds. Quiet reading rooms, winding shelves and enchanted gardens offer places to explore. Librarians, curious readers and characters from books might appear. Keys, maps and unusual volumes can hold surprises. Gentle, mysterious fantasy with a sense of wonder.",
   },
   {
     label: "☾  Far from home",
     title: "Beyond the Last Star",
     description:
-      "You wake aboard a silent ship at the edge of known space. A distant planet is broadcasting a message in your own voice.",
+      "The edge of known space, with research ships, remote stations and unfamiliar planets. Explorers, engineers and unusual life forms might cross paths. Radios, star charts and strange artifacts offer possibilities for discovery. Thoughtful science fiction balancing curiosity, isolation and wonder.",
   },
   {
     label: "◇  A beautiful mystery",
     title: "The City of Lost Hours",
     description:
-      "In a rain-soaked city, an hour has vanished from everyone’s memory. You find a photograph of yourself in a place that no longer exists.",
+      "A rain-soaked city where time can behave strangely. Cafes, clock shops, old apartments and deserted streets offer possible settings. Neighbors, watchmakers and travelers may have different stories to tell. Photographs, letters and clocks can take on unexpected meaning. An atmospheric mystery with a touch of the surreal.",
   },
 ];
 export function WorldGenerationScreen({ navigation }: Props) {
@@ -101,8 +101,8 @@ export function WorldGenerationScreen({ navigation }: Props) {
             <Text style={layout.eyebrow}>NEW WORLD</Text>
             <Text style={layout.title}>Create your world.</Text>
             <Text style={layout.body}>
-              Describe the setting for your adventure.{"\n"}Give your story
-              somewhere to begin.
+              Choose a setting and a tone.{"\n"}Let the narrator decide how the
+              story begins.
             </Text>
             {!!error && (
               <Text accessibilityRole="alert" style={{ color: colors.danger }}>
@@ -147,8 +147,12 @@ export function WorldGenerationScreen({ navigation }: Props) {
             </View>
             <View style={{ gap: 10 }}>
               <Text style={styles.label}>
-                Set the scene{" "}
+                Describe the world{" "}
                 <Text style={{ color: colors.muted }}> / optional</Text>
+              </Text>
+              <Text style={layout.body}>
+                What places, people or objects might appear? A few possibilities
+                are enough.
               </Text>
               <TextInput
                 accessibilityLabel="World description"
@@ -157,7 +161,7 @@ export function WorldGenerationScreen({ navigation }: Props) {
                 editable={!busy}
                 maxLength={500}
                 multiline
-                placeholder="What makes this place extraordinary? Who might you become?"
+                placeholder="A cozy seaside town with narrow streets, a harbor and a bookshop. Fishers, neighbors and visitors might cross paths. Old letters and curious keepsakes can spark gentle mysteries."
                 placeholderTextColor={colors.muted}
                 style={[
                   layout.input,
