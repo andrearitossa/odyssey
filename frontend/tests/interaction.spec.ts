@@ -39,6 +39,7 @@ async function setup(page: Page) {
     requestIds: [] as string[],
     streamRequests: 0,
     replayed: 0,
+    jsonReplay: false,
     replies: new Map<string, string>(),
     users: new Map<string, typeof guest>(),
     accounts: new Map<string, { password: string; user: typeof guest }>(),
@@ -126,7 +127,7 @@ async function setup(page: Page) {
       if (state.replies.has(key)) {
         state.replayed++;
         const response = state.replies.get(key)!;
-        if (request.headers().accept?.includes('text/event-stream')) {
+        if (!state.jsonReplay && request.headers().accept?.includes('text/event-stream')) {
           state.streamRequests++;
           return route.fulfill({
             headers: { 'Content-Type': 'text/event-stream' },
@@ -605,4 +606,34 @@ test("mobile layout, profile editing, world loading recovery and sign-out", asyn
   await expect(page.getByRole("button", { name: "Add username & password" })).toBeVisible();
   expect(state.unexpected).toEqual([]);
   expect(errors).toEqual([]);
+});
+
+for (const separator of [" ", ". ", ") ", ": ", " - ", " — "]) {
+  test(`choice parser accepts ${JSON.stringify(separator)} while preserving cues`, () => {
+    const messages = parseNarratorResponse(`The gate shuts.\n\n1${separator}Help Tommy — lose time\n2${separator}Call the steward — attract attention\n3${separator}Wait — water rises`);
+    expect(messages[0].text).toBe("The gate shuts.");
+    expect(currentChoices(messages).map(choice => choice.text)).toEqual(["Help Tommy — lose time", "Call the steward — attract attention", "Wait — water rises"]);
+    expect(currentChoices(parseNarratorResponse("A diary.\n2 Leave\n3 Wait"))).toEqual([]);
+  });
+}
+
+test("unpunctuated choices show their stakes, send them intact", async ({ page }) => {
+  const { state } = await setup(page);
+  state.openingText = "The gate shuts.\n\n1 Help Tommy — lose time\n2 Call the steward — attract attention\n3 Wait — water rises";
+  await page.getByRole("button", { name: "Enter The Midnight Library" }).click();
+  await page.getByRole("button", { name: /Help Tommy — lose time/ }).click();
+  await expect(page.getByRole("button", { name: /Step through the door/ })).toBeVisible();
+  expect(state.calls.at(-1)).toBe("Help Tommy — lose time");
+});
+
+test("web retries also accept JSON from a non-streaming backend", async ({ page }) => {
+  const { state } = await setup(page);
+  await enter(page);
+  state.failAfterCommit = true;
+  state.jsonReplay = true;
+  await page.getByRole("button", { name: /Pick up the brass key/ }).click();
+  await page.getByRole("button", { name: "Try this action again" }).click();
+  await expect(page.getByRole("button", { name: /Step through the door/ })).toBeVisible();
+  expect(state.replayed).toBe(1);
+  expect(state.calls).toHaveLength(2);
 });

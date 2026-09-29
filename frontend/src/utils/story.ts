@@ -14,7 +14,7 @@ export function parseNarratorResponse(
       end--;
       continue;
     }
-    const match = line.match(/^(\d{1,2})[.)]\s+(.+)$/);
+    const match = line.match(/^(\d{1,2})(?:[.):]\s+|\s+[-–—]\s+|\s+)(.+)$/);
     if (!match) break;
     choices.unshift({
       type: "choice",

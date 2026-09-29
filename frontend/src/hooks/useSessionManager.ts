@@ -156,7 +156,7 @@ export function useSessionManager() {
             }
             if (typeof event.delta === "string") {
               scene += event.delta;
-              onDelta?.(scene.replace(/\n\s*1[.)]\s[\s\S]*$/, "").trim());
+              onDelta?.(scene.replace(/\n\s*1(?:[.):]\s+|\s+[-–—]\s+|\s+)[\s\S]*$/, "").trim());
             }
             if (event.done === true && typeof event.response === "string")
               completedResponse = event.response;

@@ -22,7 +22,6 @@ type Props = NativeStackScreenProps<RootStackParamList, "Session">;
 function choiceAction(text: string): string {
   return text
     .replace(/\*\*/g, "")
-    .split(/\s+[–—-]\s+/)[0]
     .trim();
 }
 export function SessionScreen({ route, navigation }: Props) {

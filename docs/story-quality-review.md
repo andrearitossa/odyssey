@@ -4,6 +4,21 @@ Four agents ran at the same time. Each played one world through the real web app
 
 > **Caveat:** backend and frontend code (the streaming rollout) was being edited and hot-reloaded during the runs. Some failures and timeouts, particularly in *A Farewell to Arms* and *The Kreutzer Sonata*, happened during that window. The bugs listed below as "confirmed in code" are real regardless of that window.
 
+## Implementation follow-up (29 September 2026)
+
+This follow-up addresses the original findings; the scores below remain the original playtest scores, not new measurements.
+
+- **Choice rendering:** accepts trailing sequential lists with `1 `, `1.`, `1)`, `1:`, or `1 -` / `1 —`. Keeps numbered prose outside the trailing block. Risk/cost cues remain visible and are sent intact when tapped; streaming previews hide the same choice formats.
+- **Retry response format:** completed and replayed turns honor SSE requests. Inspection found that the current web client already falls back to JSON, contrary to the earlier report's absolute claim. Both formats now have regressions.
+- **Lock recovery:** abandoned leases expire after 60 seconds instead of 180. Active requests still return 409, including the same request ID: letting a retry immediately steal an active request's lock could generate twice. Each attempt owns a unique lease; all persistence writes are conditional on ownership in an atomic batch, so an old attempt cannot save over or unlock its replacement. Normal provider failures release immediately; preparation failures also release. A process termination can still require waiting for expiry.
+- **Restart persistence:** resume selects the newest-created session by insertion order, including same-second restarts, independent of later activity in an older session.
+- **Narrative memory:** replaced the older action-only summary with confirmed narration from up to 20 older turns plus the opening. Unchosen choice lists are removed from that memory. The latest four turns retain their full conversation context. This avoids treating rejected invented possessions as established facts. It is bounded narrative memory, not a structured inventory or a guarantee against model contradictions.
+- **Narrator guidance:** covers objects as well as people, lost/spent possessions, retroactive props and relatives, changed testimony, elapsed time, completed choices, enduring costs, genre-appropriate pacing, and concise consequence cues.
+
+Validation before the new live playtest: `npm run build --prefix backend` and `npm run typecheck --prefix frontend` passed. Six route regressions passed with real in-memory SQLite queries and a controlled AI provider (`cd backend && npm run test:story`): SSE/JSON replay, active and expired leases, stale-writer fencing, immediate provider-failure retry, restart selection, and outcome-based memory. Eleven targeted Playwright tests passed against the local web app with API fixtures: choice formats, visible/sent cues, JSON fallback, lost-response replay, and resume/restart.
+
+Still to assess live: grounding across at least five unsupported-premise probes per world, long-range continuity, cue quality, pacing, latency, and source/style fidelity. No new story scores are claimed from deterministic tests. World-specific canon briefs and a structured persistent state ledger are not implemented in this iteration.
+
 ## Scoreboard (1–5)
 
 | World | Hook | Fidelity | Continuity | Agency | Choices | Prose / humor | **Overall** |
